@@ -3,10 +3,12 @@
 A retrieval-augmented chatbot that answers questions using your own documents.
 
 ## Team
-|        Name           |       GitHub           |
-|   Amr Khalil Taoumi   |       @AmrTaoumi       |
-|   Layla Alwahabi      |       @layla-alw       |
-|   Walid Alwahabi      |       @Walid-Alwahabi  |
+
+| Name              | GitHub            |
+|-------------------|-------------------|
+| Amr Khalil Taoumi | @AmrTaoumi        |
+| Layla Alwahabi    | @layla-alw        |
+| Walid Alwahabi    | @Walid-Alwahabi   |
 
 
 ### Prerequisites

@@ -240,3 +240,21 @@ Fallback (no source found):
 - `doc_id`: MD5 of URL
 - `chunk_id`: `{doc_id}-p{page}-c{index}`
 - Content-Type: `application/json` on all endpoints
+
+---
+## Database Schema
+
+Table `chunks` (created by `db/init/001_chunks.sql`):
+
+| Column      | Type          | Notes                                  |
+|-------------|---------------|----------------------------------------|
+| `chunk_id`        | `TEXT` PK     | = `chunk_id`, `{doc_id}-p{page}-c{index}` |
+| `doc_id`    | `TEXT`        | MD5 of URL, indexed                    |
+| `title`     | `TEXT`        |                                        |
+| `url`       | `TEXT`        |                                        |
+| `page`      | `INTEGER`     |                                        |
+| `text`      | `TEXT`        | chunk content                          |
+| `embedding` | `vector(384)` | HNSW index, cosine (`vector_cosine_ops`) |
+
+Search must use the `<=>` operator for the index to be used.
+`score = 1 - (embedding <=> query_vector)`.

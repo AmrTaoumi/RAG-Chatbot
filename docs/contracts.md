@@ -20,9 +20,35 @@ All services expose `GET /health → {"status": "ok"}`.
 
 ---
 
+## Source
+
+MARP index page (scraped by ingestion, configured as `MARP_URL`):
+`https://www.lancaster.ac.uk/academic-standards-and-quality/regulations-and-policies/manual-of-academic-regulations-and-procedures/`
+
+- PDF links on the page are relative (`/media/lancaster-university/...pdf`) and must be resolved against the page URL.
+- `robots.txt` (`https://www.lancaster.ac.uk/robots.txt`) sets `Crawl-delay: 5`. Ingestion waits at least 5 seconds between requests to the site.
+
+---
+
 ## Events
 
-Exchange: `rag.topic` (topic exchange). All events are JSON.
+Exchange: `rag.topic` (topic exchange, durable). All events are JSON.
+
+### Routing
+
+| Event               | Routing key           | Queue               | Consumer           |
+|---------------------|-----------------------|---------------------|--------------------|
+| DocumentDiscovered  | `document.discovered` | `ingestion.fetch`   | ingestion (fetcher)|
+| DocumentExtracted   | `document.extracted`  | `indexing.documents`| indexing           |
+| ChunksIndexed       | `chunks.indexed`      | `log.chunks`        | logging            |
+| RetrievalCompleted  | `retrieval.completed` | `log.retrieval`     | logging            |
+| AnswerGenerated     | `answer.generated`    | on`log.answers`       | logging            |
+
+Rules:
+- Queues are durable. The consuming service declares its own queue and binding on startup.
+- Messages are persistent (`delivery_mode=2`) with `content_type: application/json`.
+- Consumers ack manually, after processing succeeds.
+- Delivery is at-least-once, so every consumer must be idempotent (key: `doc_id`).
 
 ### DocumentDiscovered
 Published by: ingestion  
@@ -31,7 +57,7 @@ Consumed by: ingestion (fetcher)
 ```json
 {
   "event": "DocumentDiscovered",
-  "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
+  "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
   "title": "Academic Integrity Regulations",
   "discovered_at": "2026-10-20T12:00:00Z"
 }

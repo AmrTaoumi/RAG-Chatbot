@@ -70,7 +70,10 @@ def test_publish_reports_each_event_as_it_is_confirmed(monkeypatch):
     assert sent == [docs[0]]
 
 
-def _setup(monkeypatch, robots=(200, "User-agent: *\nAllow: /"), seen=()):
+connect_kwargs = {}
+
+
+def _setup(monkeypatch, robots=(200, "User-agent: *\nAllow: /"), seen=(), lock=True):
     published, marked = [], []
     real_client = httpx.Client
 
@@ -91,7 +94,11 @@ def _setup(monkeypatch, robots=(200, "User-agent: *\nAllow: /"), seen=()):
             published.append(doc)
             on_published(doc)
 
-    monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: MagicMock())
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.execute.return_value.fetchone.return_value = (lock,)
+    connect_kwargs.clear()
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: connect_kwargs.update(kw) or conn)
     monkeypatch.setattr(discovery, "publish", fake_publish)
     monkeypatch.setattr(
         discovery, "filter_new", lambda docs, conn: [d for d in docs if d["url"] not in seen]
@@ -107,6 +114,7 @@ def test_discover(monkeypatch):
     assert discovery.discover() == 3
     assert len(published) == 3
     assert marked == published
+    assert connect_kwargs["connect_timeout"] == 10
 
 
 def test_discover_skips_already_seen(monkeypatch):
@@ -121,6 +129,16 @@ def test_discover_second_run_publishes_nothing(monkeypatch):
     published, _ = _setup(monkeypatch, seen=seen)
     assert discovery.discover() == 0
     assert published == []
+
+
+def test_discover_refuses_when_another_run_holds_the_lock(monkeypatch):
+    published, _ = _setup(monkeypatch, lock=False)
+    requests = []
+    monkeypatch.setattr(discovery, "polite_get", lambda *a: requests.append(a))
+    with pytest.raises(discovery.DiscoveryBusy):
+        discovery.discover()
+    assert published == []
+    assert requests == []
 
 
 def test_discover_respects_robots_disallow(monkeypatch):

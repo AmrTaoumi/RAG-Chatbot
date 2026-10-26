@@ -19,6 +19,16 @@ ROUTING_KEY = "document.discovered"
 CRAWL_DELAY = 5  # seconds, "Crawl-delay: 5" in lancaster.ac.uk/robots.txt
 last_request = None
 
+LOCK_ID = 7_001  # arbitrary key for the Postgres advisory lock
+
+
+class RobotsDisallowed(Exception):
+    pass
+
+
+class DiscoveryBusy(Exception):
+    pass
+
 
 def get_pdf_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
@@ -60,10 +70,6 @@ def publish(docs, rabbitmq_url, on_published=None):
                 on_published(doc)
     finally:
         connection.close()
-
-
-class RobotsDisallowed(Exception):
-    pass
 
 
 def polite_get(client, url, delay):
@@ -114,19 +120,23 @@ def mark_discovered(doc, conn):
 def discover():
     marp_url = os.environ["MARP_URL"]
     user_agent = os.environ["USER_AGENT"]
-    database_url = os.environ["DATABASE_URL"]
-
-    with httpx.Client(headers={"User-Agent": user_agent}, follow_redirects=True, timeout=30) as client:
-        robots = load_robots(client, marp_url)
-        if not robots.can_fetch(user_agent, marp_url):
-            raise RobotsDisallowed(f"robots.txt disallows {marp_url}")
-        delay = robots.crawl_delay(user_agent) or CRAWL_DELAY
-        resp = polite_get(client, marp_url, delay)
-    resp.raise_for_status()
 
     # autocommit so each URL is saved as soon as its event is confirmed; if
     # publishing dies halfway, the next run only redoes the unsent ones
-    with psycopg.connect(database_url, autocommit=True) as conn:
+    with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, connect_timeout=10) as conn:
+        # take the lock before touching the site, so overlapping runs don't both
+        # crawl it; it belongs to this connection and is released when it closes
+        if not conn.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_ID,)).fetchone()[0]:
+            raise DiscoveryBusy("another discovery run is in progress")
+
+        with httpx.Client(headers={"User-Agent": user_agent}, follow_redirects=True, timeout=30) as client:
+            robots = load_robots(client, marp_url)
+            if not robots.can_fetch(user_agent, marp_url):
+                raise RobotsDisallowed(f"robots.txt disallows {marp_url}")
+            delay = robots.crawl_delay(user_agent) or CRAWL_DELAY
+            resp = polite_get(client, marp_url, delay)
+        resp.raise_for_status()
+
         docs = filter_new(get_pdf_links(resp.text, marp_url), conn)
         publish(docs, os.environ["RABBITMQ_URL"], on_published=lambda doc: mark_discovered(doc, conn))
     logger.info("published %d new DocumentDiscovered events", len(docs))

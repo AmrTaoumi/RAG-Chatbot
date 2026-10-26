@@ -35,11 +35,13 @@ def get_pdf_links(html, base_url):
     return links
 
 
-def publish(docs, rabbitmq_url):
+def publish(docs, rabbitmq_url, on_published=None):
     connection = pika.BlockingConnection(pika.URLParameters(rabbitmq_url))
     try:
         channel = connection.channel()
         channel.exchange_declare(exchange=EXCHANGE, exchange_type="topic", durable=True)
+        # with confirms + mandatory, an unroutable message raises instead of vanishing
+        channel.confirm_delivery()
         for doc in docs:
             event = {
                 "event": "DocumentDiscovered",
@@ -50,9 +52,12 @@ def publish(docs, rabbitmq_url):
             channel.basic_publish(
                 exchange=EXCHANGE,
                 routing_key=ROUTING_KEY,
+                mandatory=True,
                 body=json.dumps(event),
                 properties=pika.BasicProperties(delivery_mode=2, content_type="application/json"),
             )
+            if on_published:
+                on_published(doc)
     finally:
         connection.close()
 
@@ -87,27 +92,23 @@ def load_robots(client, url):
     return robots
 
 
-def filter_new(docs, database_url):
+def filter_new(docs, conn):
     if not docs:
         return []
-    with psycopg.connect(database_url) as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS discovered_documents (url TEXT PRIMARY KEY)")
-        rows = conn.execute(
-            "SELECT url FROM discovered_documents WHERE url = ANY(%s)",
-            ([d["url"] for d in docs],),
-        ).fetchall()
+    conn.execute("CREATE TABLE IF NOT EXISTS discovered_documents (url TEXT PRIMARY KEY)")
+    rows = conn.execute(
+        "SELECT url FROM discovered_documents WHERE url = ANY(%s)",
+        ([d["url"] for d in docs],),
+    ).fetchall()
     seen = {row[0] for row in rows}
     return [d for d in docs if d["url"] not in seen]
 
 
-def mark_discovered(docs, database_url):
-    if not docs:
-        return
-    with psycopg.connect(database_url) as conn:
-        conn.cursor().executemany(
-            "INSERT INTO discovered_documents (url) VALUES (%s) ON CONFLICT DO NOTHING",
-            [(d["url"],) for d in docs],
-        )
+def mark_discovered(doc, conn):
+    conn.execute(
+        "INSERT INTO discovered_documents (url) VALUES (%s) ON CONFLICT DO NOTHING",
+        (doc["url"],),
+    )
 
 
 def discover():
@@ -123,9 +124,10 @@ def discover():
         resp = polite_get(client, marp_url, delay)
     resp.raise_for_status()
 
-    docs = filter_new(get_pdf_links(resp.text, marp_url), database_url)
-    publish(docs, os.environ["RABBITMQ_URL"])
-    # recorded only after publishing, so a failed publish is retried next run
-    mark_discovered(docs, database_url)
+    # autocommit so each URL is saved as soon as its event is confirmed; if
+    # publishing dies halfway, the next run only redoes the unsent ones
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        docs = filter_new(get_pdf_links(resp.text, marp_url), conn)
+        publish(docs, os.environ["RABBITMQ_URL"], on_published=lambda doc: mark_discovered(doc, conn))
     logger.info("published %d new DocumentDiscovered events", len(docs))
     return len(docs)

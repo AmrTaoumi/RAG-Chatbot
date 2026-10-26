@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import httpx
 import pika
+import psycopg
 import pytest
 
 import discovery
@@ -41,6 +42,8 @@ def test_publish(monkeypatch):
         exchange="rag.topic", exchange_type="topic", durable=True
     )
     call = channel.basic_publish.call_args.kwargs
+    channel.confirm_delivery.assert_called_once()
+    assert call["mandatory"] is True
     assert call["routing_key"] == "document.discovered"
     assert call["properties"].delivery_mode == 2
     assert call["properties"].content_type == "application/json"
@@ -51,6 +54,20 @@ def test_publish(monkeypatch):
     assert event["title"] == "A"
     assert event["discovered_at"].endswith("Z")
     connection.close.assert_called_once()
+
+
+def test_publish_reports_each_event_as_it_is_confirmed(monkeypatch):
+    connection = MagicMock()
+    channel = connection.channel.return_value
+    channel.basic_publish.side_effect = [None, pika.exceptions.UnroutableError([])]
+    monkeypatch.setattr(pika, "BlockingConnection", lambda params: connection)
+    sent = []
+    docs = [{"url": f"https://x.example/{n}.pdf", "title": n} for n in "ab"]
+
+    with pytest.raises(pika.exceptions.UnroutableError):
+        discovery.publish(docs, "amqp://x", on_published=sent.append)
+
+    assert sent == [docs[0]]
 
 
 def _setup(monkeypatch, robots=(200, "User-agent: *\nAllow: /"), seen=()):
@@ -68,11 +85,18 @@ def _setup(monkeypatch, robots=(200, "User-agent: *\nAllow: /"), seen=()):
     monkeypatch.setenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
     monkeypatch.setenv("DATABASE_URL", "postgresql://x")
     monkeypatch.setattr(httpx, "Client", lambda **kw: real_client(transport=transport, **kw))
-    monkeypatch.setattr(discovery, "publish", lambda docs, url: published.extend(docs))
+
+    def fake_publish(docs, url, on_published=None):
+        for doc in docs:
+            published.append(doc)
+            on_published(doc)
+
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **kw: MagicMock())
+    monkeypatch.setattr(discovery, "publish", fake_publish)
     monkeypatch.setattr(
-        discovery, "filter_new", lambda docs, url: [d for d in docs if d["url"] not in seen]
+        discovery, "filter_new", lambda docs, conn: [d for d in docs if d["url"] not in seen]
     )
-    monkeypatch.setattr(discovery, "mark_discovered", lambda docs, url: marked.extend(docs))
+    monkeypatch.setattr(discovery, "mark_discovered", lambda doc, conn: marked.append(doc))
     monkeypatch.setattr(discovery, "last_request", None)
     monkeypatch.setattr(discovery.time, "sleep", lambda s: None)
     return published, marked

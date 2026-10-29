@@ -13,4 +13,5 @@ API Endpoints:
 Communicates With:
   - chat (REST, answers `GET /search` calls)
   - postgres (SQL, reads chunks using the `<=>` cosine operator; `score = 1 - distance`)
-  - logging (Events, publishes `RetrievalCompleted`)
+  - embedding model (local, retrieval loads all-MiniLM-L6-v2 itself to embed `q`; same model as indexing)
+  - RabbitMQ (Events, publishes `RetrievalCompleted`; no consumer yet)

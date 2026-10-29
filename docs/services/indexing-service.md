@@ -11,7 +11,7 @@ API Endpoints:
   - No other HTTP endpoints; the service is driven by events
 
 Communicates With:
-  - ingestion (Events, consumes `DocumentExtracted` from queue `indexing.documents`)
+  - extraction (Events, consumes `DocumentExtracted` from queue `indexing.documents`)
   - postgres (SQL, writes chunks and embeddings; idempotent on `doc_id`)
-  - logging (Events, publishes `ChunksIndexed`)
+  - RabbitMQ (Events, publishes `ChunksIndexed`; no consumer yet)
   - retrieval (indirect, via the shared `chunks` table that retrieval reads)

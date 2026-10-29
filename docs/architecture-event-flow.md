@@ -1,6 +1,6 @@
 # Architecture
 
-**Status:** Draft. Replaces `docs/material/Lancaster MARP Retrieval Pipeline-2026-10-19-120156.pdf` as the source of truth once approved.
+**Status:** Draft. Replaces `docs/material/Lancaster MARP Retrieval Pipeline-2026-10-19-120156.pdf` as the source of truth once approved. Covers both the service overview (Week 2) and the event flow (Week 3).
 
 ```mermaid
 flowchart LR

@@ -2,7 +2,7 @@
 
 **Status:** Draft — pending approval from all three members.
 
-See `docs/architecture.md` for the diagram and `docs/services/` for one description per service.
+See `docs/architecture-event-flow.md` for the diagram, `docs/events/event-catalogue.md` for the events and `docs/services/` for one description per service.
 
 ---
 
@@ -35,133 +35,7 @@ MARP index page (scraped by ingestion, configured as `MARP_URL`):
 
 ## Events
 
-Exchange: `rag.topic` (topic exchange, durable). All events are JSON.
-
-### Routing
-
-| Event               | Routing key           | Queue                 | Consumer            |
-|---------------------|-----------------------|-----------------------|---------------------|
-| DocumentDiscovered  | `document.discovered` | `ingestion.fetch`     | ingestion (fetcher) |
-| DocumentFetched     | `document.fetched`    | `extraction.documents`| extraction          |
-| DocumentExtracted   | `document.extracted`  | `indexing.documents`  | indexing            |
-| ChunksIndexed       | `chunks.indexed`      | none yet              | none yet            |
-| RetrievalCompleted  | `retrieval.completed` | none yet              | none yet            |
-| AnswerGenerated     | `answer.generated`    | none yet              | none yet            |
-
-Rules:
-- Queues are durable. Both the consuming service and the publishing service declare the queue and binding on startup, using the names in the routing table (declaring is idempotent). This way an event published before its consumer has started is kept, not lost.
-- Events with a consumer are published with `mandatory=True` and publisher confirms, so an unroutable message raises an error.
-- `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer and no queue yet. They are published with `mandatory=False`, so RabbitMQ drops them without an error until a consumer binds a queue.
-- Messages are persistent (`delivery_mode=2`) with `content_type: application/json`.
-- Consumers ack manually, after processing succeeds.
-- Delivery is at-least-once, so every consumer must be idempotent (key: `doc_id`).
-
-### DocumentDiscovered
-Published by: ingestion  
-Consumed by: ingestion (fetcher)
-
-`doc_id` is not in the event. It is derived from `url` (MD5, see Shared Conventions).
-
-```json
-{
-  "event": "DocumentDiscovered",
-  "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
-  "title": "Academic Integrity Regulations",
-  "discovered_at": "2026-10-20T12:00:00Z"
-}
-```
-
-### DocumentFetched
-Published by: ingestion (after downloading the PDF)  
-Consumed by: extraction
-
-The PDF is not carried in the event. It is written to the shared `pdfs` volume and the event gives its path.
-
-```json
-{
-  "event": "DocumentFetched",
-  "doc_id": "9e107d9d372bb6826bd81d3542a419d6",
-  "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
-  "title": "Academic Integrity Regulations",
-  "path": "/data/pdfs/9e107d9d372bb6826bd81d3542a419d6.pdf",
-  "fetched_at": "2026-10-20T12:00:30Z"
-}
-```
-
-### DocumentExtracted
-Published by: extraction  
-Consumed by: indexing
-
-```json
-{
-  "event": "DocumentExtracted",
-  "doc_id": "9e107d9d372bb6826bd81d3542a419d6",
-  "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
-  "title": "Academic Integrity Regulations",
-  "page_count": 12,
-  "pages": [
-    {"page": 1, "text": "..."},
-    {"page": 2, "text": "..."}
-  ],
-  "extracted_at": "2026-10-20T12:01:00Z"
-}
-```
-
-### ChunksIndexed
-Published by: indexing  
-Consumed by: none yet
-
-```json
-{
-  "event": "ChunksIndexed",
-  "doc_id": "9e107d9d372bb6826bd81d3542a419d6",
-  "chunk_count": 34,
-  "indexed_at": "2026-10-20T12:02:00Z"
-}
-```
-
-### RetrievalCompleted
-Published by: retrieval  
-Consumed by: none yet
-
-```json
-{
-  "event": "RetrievalCompleted",
-  "query": "what is the late submission penalty?",
-  "k": 5,
-  "results": [
-    {
-      "chunk_id": "9e107d9d372bb6826bd81d3542a419d6-p3-c0",
-      "doc_id": "9e107d9d372bb6826bd81d3542a419d6",
-      "title": "Academic Integrity Regulations",
-      "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
-      "page": 3,
-      "score": 0.91
-    }
-  ],
-  "retrieved_at": "2026-10-20T12:03:00Z"
-}
-```
-
-### AnswerGenerated
-Published by: chat  
-Consumed by: none yet
-
-```json
-{
-  "event": "AnswerGenerated",
-  "question": "what is the late submission penalty?",
-  "answer": "A 5-mark deduction per day up to a maximum of 5 days...",
-  "citations": [
-    {
-      "title": "Academic Integrity Regulations",
-      "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
-      "page": 3
-    }
-  ],
-  "generated_at": "2026-10-20T12:03:05Z"
-}
-```
+Event definitions (routing, envelope, `correlationId` rules and one schema per event) are in `docs/events/event-catalogue.md`.
 
 ---
 
@@ -205,11 +79,27 @@ Response `200 OK`:
 
 ---
 
+### Indexing (`localhost:8002`)
+
+**GET /stats**  
+Counts what is stored in `chunks`.
+
+Response `200 OK`:
+```json
+{"documents": 16, "chunks": 534}
+```
+
+`documents` is the number of distinct `doc_id` values and `chunks` is the row count.
+
+---
+
 ### Retrieval (`localhost:8003`)
 
 **GET /search**
 
 Query params: `q` (string, required), `k` (int, default 5)
+
+Optional header: `X-Correlation-ID` (UUID). Retrieval puts it in `RetrievalCompleted.correlationId`, or creates one if missing.
 
 Response `200 OK`:
 ```json

@@ -1,7 +1,10 @@
 import logging
+import os
 import sys
 
-from fastapi import FastAPI
+import psycopg
+import store
+from fastapi import FastAPI, HTTPException
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -16,3 +19,15 @@ app = FastAPI()
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/documents")
+def documents():
+    try:
+        with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, connect_timeout=10) as conn:
+            # creating the table here too, so an empty database gives [] instead of an error
+            store.ensure_table(conn)
+            return store.list_documents(conn)
+    except psycopg.OperationalError as e:
+        logger.error("database unavailable: %s", e)
+        raise HTTPException(status_code=503, detail="database unavailable")

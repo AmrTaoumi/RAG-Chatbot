@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pdfminer.pdfparser import PDFSyntaxError
 
-from fetcher import clean_pages, extract_pages, join_wrapped_lines, table_text
+from extractor import clean_pages, extract_pages, join_wrapped_lines, table_text
 
 SAMPLE = Path(__file__).parent / "fixtures" / "sample.pdf"
 TABLE = Path(__file__).parent / "fixtures" / "table.pdf"

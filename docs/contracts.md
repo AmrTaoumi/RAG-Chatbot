@@ -294,7 +294,7 @@ Fallback (no source found):
 
 ## Database Schema
 
-Each table has one owning service. Other services must not write to it.
+Each table has one owning service. Other services must not write to it. `chunks` is created by `db/init/001_chunks.sql`, which also enables the pgvector extension. The other tables are created by their owner on startup (`CREATE TABLE IF NOT EXISTS`), as ingestion already does for `discovered_documents`.
 
 ### `chunks` (owner: indexing; created by `db/init/001_chunks.sql`)
 

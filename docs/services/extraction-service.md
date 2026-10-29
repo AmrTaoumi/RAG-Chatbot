@@ -8,7 +8,7 @@ Data Owned:
 
 API Endpoints:
   - [GET] /health - liveness check
-  - [GET] /documents - list extracted documents
+  - [GET] /documents - list extracted documents (`[]` when there are none; 503 if the database is unreachable)
 
 Communicates With:
   - ingestion (Events, consumes `DocumentFetched` from queue `extraction.documents`; reads the PDF from the shared `pdfs` volume, read-only)

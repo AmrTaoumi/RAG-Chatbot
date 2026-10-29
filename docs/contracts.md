@@ -77,6 +77,11 @@ Response `200 OK`:
 ]
 ```
 
+An empty database returns `[]`.
+
+Errors:
+- `503` with `{"detail": "database unavailable"}` — Postgres cannot be reached. `/health` still answers `200`.
+
 ---
 
 ### Indexing (`localhost:8002`)

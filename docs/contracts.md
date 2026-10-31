@@ -2,21 +2,24 @@
 
 **Status:** Draft — pending approval from all three members.
 
+See `docs/architecture-event-flow.md` for the diagram, `docs/events/event-catalogue.md` for the events and `docs/services/` for one description per service.
+
 ---
 
 ## Services and Ports
 
-| Service    | Port | Role                                      |
-|------------|------|-------------------------------------------|
-| ingestion  | 8001 | Scrape MARP, fetch PDFs, extract text     |
-| indexing   | 8002 | Consume events, chunk, embed, store       |
-| retrieval  | 8003 | Vector search over pgvector               |
-| chat       | 8004 | Prompt + LLM, return answer + citations   |
-| postgres   | 5432 | pgvector store                            |
-| rabbitmq   | 5672 | AMQP broker                               |
-| rabbitmq   | 15672| Management UI                             |
+| Service    | Port  | Role                                                  |
+|------------|-------|-------------------------------------------------------|
+| ingestion  | 8001  | Scrape MARP index page, discover and fetch PDFs       |
+| indexing   | 8002  | Consume events, chunk, embed, store                   |
+| retrieval  | 8003  | Vector search over pgvector                           |
+| chat       | 8004  | Prompt + LLM, semantic cache, return answer + citations, serves the web UI |
+| extraction | 8005  | Extract per-page text from fetched PDFs               |
+| postgres   | 5432  | pgvector store                                        |
+| rabbitmq   | 5672  | AMQP broker                                           |
+| rabbitmq   | 15672 | Management UI                                         |
 
-All services expose `GET /health → {"status": "ok"}`.
+All backend services expose `GET /health → {"status": "ok"}`.
 
 ---
 
@@ -32,111 +35,7 @@ MARP index page (scraped by ingestion, configured as `MARP_URL`):
 
 ## Events
 
-Exchange: `rag.topic` (topic exchange, durable). All events are JSON.
-
-### Routing
-
-| Event               | Routing key           | Queue               | Consumer           |
-|---------------------|-----------------------|---------------------|--------------------|
-| DocumentDiscovered  | `document.discovered` | `ingestion.fetch`   | ingestion (fetcher)|
-| DocumentExtracted   | `document.extracted`  | `indexing.documents`| indexing           |
-| ChunksIndexed       | `chunks.indexed`      | `log.chunks`        | logging            |
-| RetrievalCompleted  | `retrieval.completed` | `log.retrieval`     | logging            |
-| AnswerGenerated     | `answer.generated`    | on`log.answers`       | logging            |
-
-Rules:
-- Queues are durable. The consuming service declares its own queue and binding on startup.
-- Messages are persistent (`delivery_mode=2`) with `content_type: application/json`.
-- Consumers ack manually, after processing succeeds.
-- Delivery is at-least-once, so every consumer must be idempotent (key: `doc_id`).
-
-### DocumentDiscovered
-Published by: ingestion  
-Consumed by: ingestion (fetcher)
-
-```json
-{
-  "event": "DocumentDiscovered",
-  "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
-  "title": "Academic Integrity Regulations",
-  "discovered_at": "2026-10-20T12:00:00Z"
-}
-```
-
-### DocumentExtracted
-Published by: ingestion  
-Consumed by: indexing
-
-```json
-{
-  "event": "DocumentExtracted",
-  "doc_id": "a1b2c3d4",
-  "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
-  "title": "Academic Integrity Regulations",
-  "page_count": 12,
-  "pages": [
-    {"page": 1, "text": "..."},
-    {"page": 2, "text": "..."}
-  ],
-  "extracted_at": "2026-10-20T12:01:00Z"
-}
-```
-
-### ChunksIndexed
-Published by: indexing  
-Consumed by: (logging / future consumers)
-
-```json
-{
-  "event": "ChunksIndexed",
-  "doc_id": "a1b2c3d4",
-  "chunk_count": 34,
-  "indexed_at": "2026-10-20T12:02:00Z"
-}
-```
-
-### RetrievalCompleted
-Published by: retrieval  
-Consumed by: (logging / future consumers)
-
-```json
-{
-  "event": "RetrievalCompleted",
-  "query": "what is the late submission penalty?",
-  "k": 5,
-  "results": [
-    {
-      "chunk_id": "c001",
-      "doc_id": "a1b2c3d4",
-      "title": "Academic Integrity Regulations",
-      "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
-      "page": 3,
-      "score": 0.91
-    }
-  ],
-  "retrieved_at": "2026-10-20T12:03:00Z"
-}
-```
-
-### AnswerGenerated
-Published by: chat  
-Consumed by: (logging / future consumers)
-
-```json
-{
-  "event": "AnswerGenerated",
-  "question": "what is the late submission penalty?",
-  "answer": "A 5-mark deduction per day up to a maximum of 5 days...",
-  "citations": [
-    {
-      "title": "Academic Integrity Regulations",
-      "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
-      "page": 3
-    }
-  ],
-  "generated_at": "2026-10-20T12:03:05Z"
-}
-```
+Event definitions (routing, envelope, `correlationId` rules and one schema per event) are in `docs/events/event-catalogue.md`.
 
 ---
 
@@ -144,15 +43,23 @@ Consumed by: (logging / future consumers)
 
 ### Ingestion (`localhost:8001`)
 
-**POST /ingest/run**  
-Triggers discovery and extraction pipeline.
+**POST /discover**  
+Scrapes the MARP index page and publishes one `DocumentDiscovered` per new PDF. Runs synchronously.
 
 Request: _(no body)_
 
-Response `202 Accepted`:
+Response `200 OK`:
 ```json
-{"status": "started"}
+{"published": 3}
 ```
+
+Errors:
+- `403` — `robots.txt` disallows the index page.
+- `409` — another discovery run is in progress.
+
+---
+
+### Extraction (`localhost:8005`)
 
 **GET /documents**  
 Lists extracted documents.
@@ -161,14 +68,33 @@ Response `200 OK`:
 ```json
 [
   {
-    "doc_id": "a1b2c3d4",
+    "doc_id": "9e107d9d372bb6826bd81d3542a419d6",
     "title": "Academic Integrity Regulations",
-    "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
+    "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
     "page_count": 12,
     "extracted_at": "2026-10-20T12:01:00Z"
   }
 ]
 ```
+
+An empty database returns `[]`.
+
+Errors:
+- `503` with `{"detail": "database unavailable"}` — Postgres cannot be reached. `/health` still answers `200`.
+
+---
+
+### Indexing (`localhost:8002`)
+
+**GET /stats**  
+Counts what is stored in `chunks`.
+
+Response `200 OK`:
+```json
+{"documents": 16, "chunks": 534}
+```
+
+`documents` is the number of distinct `doc_id` values and `chunks` is the row count.
 
 ---
 
@@ -178,16 +104,18 @@ Response `200 OK`:
 
 Query params: `q` (string, required), `k` (int, default 5)
 
+Optional header: `X-Correlation-ID` (UUID). Retrieval puts it in `RetrievalCompleted.correlationId`, or creates one if missing.
+
 Response `200 OK`:
 ```json
 {
   "query": "what is the late submission penalty?",
   "results": [
     {
-      "chunk_id": "c001",
-      "doc_id": "a1b2c3d4",
+      "chunk_id": "9e107d9d372bb6826bd81d3542a419d6-p3-c0",
+      "doc_id": "9e107d9d372bb6826bd81d3542a419d6",
       "title": "Academic Integrity Regulations",
-      "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
+      "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
       "page": 3,
       "text": "A 5-mark deduction per day...",
       "score": 0.91
@@ -201,6 +129,11 @@ Results ordered by score descending, tie-break on `chunk_id` ascending.
 ---
 
 ### Chat (`localhost:8004`)
+
+**GET /**  
+Serves the web UI (static HTML and JS bundled with the chat service). The page calls `POST /chat` on the same origin, so no CORS is needed.
+
+Response `200 OK`: `text/html`
 
 **POST /chat**
 
@@ -216,7 +149,7 @@ Response `200 OK`:
   "citations": [
     {
       "title": "Academic Integrity Regulations",
-      "url": "https://example.ac.uk/marp/Academic-Integrity-Regs.pdf",
+      "url": "https://www.lancaster.ac.uk/media/lancaster-university/content-assets/documents/student-based-services/asq/marp/Academic-Integrity-Regs.pdf",
       "page": 3
     }
   ]
@@ -235,20 +168,34 @@ Fallback (no source found):
 
 ## Shared Conventions
 
-- Embedding model: `all-MiniLM-L6-v2` (384 dimensions)
+- Embedding model: `all-MiniLM-L6-v2` (384 dimensions), loaded locally by indexing (chunks), retrieval (the `q` param) and chat (cache lookups). All three must use the same model.
 - All timestamps: ISO 8601 UTC
-- `doc_id`: MD5 of URL
+- `doc_id`: MD5 of URL (32 hex characters)
 - `chunk_id`: `{doc_id}-p{page}-c{index}`
-- Content-Type: `application/json` on all endpoints
+- Content-Type: `application/json` on all endpoints, except `GET /` on chat (`text/html`)
+- Fetched PDFs: shared Docker volume `pdfs`, mounted at `/data/pdfs` (read-write in ingestion, read-only in extraction), file name `{doc_id}.pdf`
 
 ---
+
+## Configuration
+
+| Variable             | Used by    | Notes                                              |
+|----------------------|------------|----------------------------------------------------|
+| `OPENROUTER_API_KEY` | chat       | Secret, `.env` only                                |
+| `OPENROUTER_MODEL`   | chat       | Model slug. Not chosen yet.                        |
+| `CACHE_TTL_SECONDS`  | chat       | Semantic cache lifetime, default `86400` (24 hours) |
+
+---
+
 ## Database Schema
 
-Table `chunks` (created by `db/init/001_chunks.sql`):
+Each table has one owning service. Other services must not write to it. `chunks` is created by `db/init/001_chunks.sql`, which also enables the pgvector extension. The other tables are created by their owner on startup (`CREATE TABLE IF NOT EXISTS`), as ingestion already does for `discovered_documents`.
+
+### `chunks` (owner: indexing; created by `db/init/001_chunks.sql`)
 
 | Column      | Type          | Notes                                  |
 |-------------|---------------|----------------------------------------|
-| `chunk_id`        | `TEXT` PK     | = `chunk_id`, `{doc_id}-p{page}-c{index}` |
+| `chunk_id`  | `TEXT` PK     | `{doc_id}-p{page}-c{index}`            |
 | `doc_id`    | `TEXT`        | MD5 of URL, indexed                    |
 | `title`     | `TEXT`        |                                        |
 | `url`       | `TEXT`        |                                        |
@@ -258,3 +205,34 @@ Table `chunks` (created by `db/init/001_chunks.sql`):
 
 Search must use the `<=>` operator for the index to be used.
 `score = 1 - (embedding <=> query_vector)`.
+
+Retrieval reads this table, read-only.
+
+### `discovered_documents` (owner: ingestion)
+
+| Column | Type      | Notes                                   |
+|--------|-----------|-----------------------------------------|
+| `url`  | `TEXT` PK | One row per PDF URL, written once the `DocumentDiscovered` event is confirmed |
+
+### `documents` (owner: extraction)
+
+| Column         | Type          | Notes                          |
+|----------------|---------------|--------------------------------|
+| `doc_id`       | `TEXT` PK     | MD5 of URL                     |
+| `title`        | `TEXT`        |                                |
+| `url`          | `TEXT`        |                                |
+| `page_count`   | `INTEGER`     |                                |
+| `pages`        | `JSONB`       | `[{"page": 1, "text": "..."}]` |
+| `extracted_at` | `TIMESTAMPTZ` |                                |
+
+### `semantic_cache` (owner: chat)
+
+| Column       | Type           | Notes                                              |
+|--------------|----------------|----------------------------------------------------|
+| `id`         | `BIGSERIAL` PK |                                                    |
+| `question`   | `TEXT`         |                                                    |
+| `embedding`  | `vector(384)`  | Embedding of the question, same model as `chunks`  |
+| `answer`     | `TEXT`         |                                                    |
+| `citations`  | `JSONB`        | Same shape as the `/chat` response                 |
+| `created_at` | `TIMESTAMPTZ`  |                                                    |
+| `expires_at` | `TIMESTAMPTZ`  | `created_at + CACHE_TTL_SECONDS`. Expired rows are ignored. |

@@ -1,4 +1,5 @@
 import json
+import uuid
 from unittest.mock import MagicMock
 
 import httpx
@@ -41,6 +42,10 @@ def test_publish(monkeypatch):
     channel.exchange_declare.assert_called_once_with(
         exchange="rag.topic", exchange_type="topic", durable=True
     )
+    channel.queue_declare.assert_called_once_with(queue="ingestion.fetch", durable=True)
+    channel.queue_bind.assert_called_once_with(
+        queue="ingestion.fetch", exchange="rag.topic", routing_key="document.discovered"
+    )
     call = channel.basic_publish.call_args.kwargs
     channel.confirm_delivery.assert_called_once()
     assert call["mandatory"] is True
@@ -49,11 +54,25 @@ def test_publish(monkeypatch):
     assert call["properties"].content_type == "application/json"
 
     event = json.loads(call["body"])
-    assert event["event"] == "DocumentDiscovered"
-    assert event["url"] == "https://x.example/a.pdf"
-    assert event["title"] == "A"
-    assert event["discovered_at"].endswith("Z")
+    assert event["eventType"] == "DocumentDiscovered"
+    assert event["payload"] == {"url": "https://x.example/a.pdf", "title": "A"}
+    assert event["timestamp"].endswith("Z")
+    uuid.UUID(event["eventId"])
+    uuid.UUID(event["correlationId"])
     connection.close.assert_called_once()
+
+
+def test_publish_gives_each_document_its_own_ids(monkeypatch):
+    connection = MagicMock()
+    channel = connection.channel.return_value
+    monkeypatch.setattr(pika, "BlockingConnection", lambda params: connection)
+    docs = [{"url": f"https://x.example/{n}.pdf", "title": n} for n in "ab"]
+
+    discovery.publish(docs, "amqp://x")
+
+    events = [json.loads(c.kwargs["body"]) for c in channel.basic_publish.call_args_list]
+    assert len({e["eventId"] for e in events}) == 2
+    assert len({e["correlationId"] for e in events}) == 2
 
 
 def test_publish_reports_each_event_as_it_is_confirmed(monkeypatch):

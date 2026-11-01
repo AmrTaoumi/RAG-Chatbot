@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 import time
 import urllib.robotparser
 import uuid
@@ -20,6 +21,7 @@ QUEUE = "ingestion.fetch"
 
 CRAWL_DELAY = 5  # seconds, "Crawl-delay: 5" in lancaster.ac.uk/robots.txt
 last_request = None
+request_lock = threading.Lock()  # discovery and the fetcher share one crawl delay
 
 LOCK_ID = 7_001  # arbitrary key for the Postgres advisory lock
 
@@ -81,14 +83,15 @@ def publish(docs, rabbitmq_url, on_published=None):
 
 def polite_get(client, url, delay):
     global last_request
-    if last_request is not None:
-        wait = delay - (time.monotonic() - last_request)
-        if wait > 0:
-            time.sleep(wait)
-    try:
-        return client.get(url)
-    finally:
-        last_request = time.monotonic()
+    with request_lock:
+        if last_request is not None:
+            wait = delay - (time.monotonic() - last_request)
+            if wait > 0:
+                time.sleep(wait)
+        try:
+            return client.get(url)
+        finally:
+            last_request = time.monotonic()
 
 
 def load_robots(client, url):

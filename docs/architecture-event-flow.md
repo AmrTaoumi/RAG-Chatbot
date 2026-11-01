@@ -2,8 +2,8 @@
 
 This diagram shows every service, how they communicate, and the order of the two main flows:
 
-- Flow B — loading documents (green):** runs first. It fills the database with searchable chunks from the MARP PDFs.
-- Flow A — answering a question (blue):** runs for every user question. It reads the chunks that flow B stored.
+- **Flow B — loading documents (green):** runs first. It fills the database with searchable chunks from the MARP PDFs.
+- **Flow A — answering a question (blue):** runs for every user question. It reads the chunks that flow B stored.
 
 ```mermaid
 flowchart LR

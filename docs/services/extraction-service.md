@@ -15,5 +15,9 @@ Communicates With:
   - postgres (SQL, writes `documents`; idempotent on `doc_id`)
   - indexing (Events, publishes `DocumentExtracted`)
 
+Known limitations:
+  - `page` is the PDF page index, which can differ from the page number printed on the page (covers and contents pages shift it).
+  - Text comes from the PDF's text layer only. A scanned PDF with no text is discarded.
+
 Note:
   Extraction was split out of ingestion (Week 2 slide 22 example). Ingestion now only discovers and fetches PDFs.

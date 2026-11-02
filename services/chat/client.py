@@ -21,7 +21,7 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 def load_settings():
     
     api_key = os.environ.get("OPENROUTER_API_KEY")
-    model = os.environ.get("OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free")
+    model = os.environ.get("OPENROUTER_MODEL") or "nvidia/nemotron-3.5-super-vl:free"
 
     if not api_key:
         raise ValueError("API key is missing, set OPENROUTER_API_KEY")
@@ -113,3 +113,17 @@ if __name__ == "__main__":
     result = ask("what happens if i miss an exam") # ADD YOUR QUESTION HERE TO TEST IT. WIP
 
     print(result)
+
+
+
+
+
+
+
+
+
+
+
+
+
+    

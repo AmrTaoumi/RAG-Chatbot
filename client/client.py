@@ -1,13 +1,22 @@
+import logging
 import os
+import sys
+import time
 import httpx
-import json
+
 #  TO USE THIS YOU MUST FIRST TYPE : export OPENROUTER_API_KEY="ADD YOUR OWN KEY HERE"
 #  THIS IS THE WAY IM TESTING THE API KEY IT SAVES IT ON YOUR TERMINAL 
 #  MUST DOWNLOAD HTTPX ON YOUR VENV BEFORE TESTING 
 OPENROUTER_URL =  "https://openrouter.ai/api/v1/chat/completions"
 
-# read config from environment variables. Fail early if the key is missing.
-# TODO add the env variables right now its hard coded 
+
+
+logger = logging.getLogger(__name__)
+
+MAX_ATTEMPTS = 5         # TODO choice for max attempts we need to justify it.
+BASE_DELAY = 1         # TODO: seconds for the first try it goes up per attempt. we need to justify the choice
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
 
 def load_settings():
     
@@ -18,6 +27,10 @@ def load_settings():
         raise ValueError("API key is missing, set OPENROUTER_API_KEY")
 
     return api_key, model
+
+def backoff_delay(attempt, response=None):
+    # BASE_DELAY = 1: attempts 1 = 1s, 2 = 2s, 3 = 4s, 4 = 8s.
+    return BASE_DELAY * 2 ** (attempt - 1) # we need to justify this number. it it fine to wait max 15 seconds total for a response before fail
 
 # sends a question to the model and returns the answer.
 def ask(question: str) -> str:
@@ -34,33 +47,69 @@ def ask(question: str) -> str:
         ],
     }
 
-    response = httpx.post(OPENROUTER_URL, headers=headers, json=body, timeout=30 ) 
+    logger.debug("OpenRouter request model=%s max_tokens=%d", model, body["max_tokens"])
+    start = time.monotonic()
 
-    if response.status_code == 200:
-        data = response.json()
-        choice = data["choices"][0]
-        content = choice["message"]["content"]
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        is_last_attempt = (attempt == MAX_ATTEMPTS)
 
-        # for debugging and understanding the json keys, etc
-        # print(json.dumps(data, indent=2)) 
+        try:
+            response = httpx.post(OPENROUTER_URL, headers=headers, json=body, timeout=30)# change timout here.
 
-        if not content:
-            reason = choice.get("finish_reason")
-            raise RuntimeError(f"Model returned no answer(finish_reason: {reason})")
+        except httpx.TimeoutException:
+            if is_last_attempt:
+                logger.error("OpenRouter timed out attempts=%d", attempt)
+                raise RuntimeError(f"OpenRouter timed out after {attempt} attempts")
+            delay = backoff_delay(attempt)
+            logger.warning("OpenRouter timeout attempt=%d/%d retry_in=%ds", attempt, MAX_ATTEMPTS, delay)
+            time.sleep(delay)
+            continue
+
+
+        if response.status_code == 200:
+            data = response.json()
+            choice = data["choices"][0]
+            content = choice["message"]["content"]
+    
+            # for debugging and understanding the json keys, etc
+            # print(json.dumps(data, indent=2)) 
+    
+            if not content:
+                reason = choice.get("finish_reason")
+                logger.error("OpenRouter empty answer finish_reason=%s", reason)
+                raise RuntimeError(f"Model returned no answer (finish_reason: {reason})")
+
+            usage = data.get("usage", {})
+            logger.info(
+                "OpenRouter success model=%s attempt=%d elapsed=%.2fs prompt_tokens=%s completion_tokens=%s",
+                model, attempt, time.monotonic() - start,
+                usage.get("prompt_tokens"), usage.get("completion_tokens"),
+            )
+            return content
+
         
-        return content
 
-        
-    else:
+        if response.status_code in RETRYABLE_STATUS and not is_last_attempt:
+            delay = backoff_delay(attempt, response)
+            logger.warning("OpenRouter status=%d attempt=%d/%d retry_in=%ds",response.status_code, attempt, MAX_ATTEMPTS, delay)
+            time.sleep(delay)
+            continue
+
         data = response.json()
         message = data["error"]["message"]
-        raise RuntimeError((f"OpenRouter error {response.status_code}: {message}"))
+        logger.error("OpenRouter failed status=%d message=%s", response.status_code, message)
+        raise RuntimeError(f"OpenRouter error {response.status_code}: {message}")
 
 
     
 if __name__ == "__main__":
 
-    result = ask("what is the meaning of life?") # ADD YOUR QUESTION HERE TO TEST IT. WIP
-    # TODO add logs for usage(total_tokens reasoning_tokens etc)
+    logging.basicConfig(
+        stream=sys.stdout,
+        level=logging.INFO,
+        format='{"time": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}',
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    result = ask("what happens if i miss an exam") # ADD YOUR QUESTION HERE TO TEST IT. WIP
 
     print(result)

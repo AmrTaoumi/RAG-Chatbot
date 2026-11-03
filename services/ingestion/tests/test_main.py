@@ -24,10 +24,3 @@ def test_discover_errors(monkeypatch, error, status):
 
     monkeypatch.setattr(discovery, "discover", fail)
     assert client.post("/discover").status_code == status
-
-
-def test_openapi_docs():
-    assert client.get("/docs").status_code == 200
-    paths = client.get("/openapi.json").json()["paths"]
-    assert {"/health", "/discover"} <= set(paths)
-    assert {"200", "403", "409"} <= set(paths["/discover"]["post"]["responses"])

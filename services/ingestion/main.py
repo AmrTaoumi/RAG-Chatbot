@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import consumer
 import discovery
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -21,15 +22,40 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+class Health(BaseModel):
+    status: str
 
 
-@app.get("/health")
+class DiscoverResult(BaseModel):
+    published: int
+
+
+class Error(BaseModel):
+    detail: str
+
+
+app = FastAPI(
+    title="Ingestion service",
+    description="Scrapes the MARP index page, publishes DocumentDiscovered events and downloads the PDFs.",
+    lifespan=lifespan,
+)
+
+
+@app.get("/health", response_model=Health, summary="Liveness check")
 def health():
     return {"status": "ok"}
 
 
-@app.post("/discover")
+@app.post(
+    "/discover",
+    response_model=DiscoverResult,
+    summary="Scrape the MARP page and publish new PDFs",
+    description="Publishes one DocumentDiscovered event per PDF not seen before. Runs synchronously.",
+    responses={
+        403: {"model": Error, "description": "robots.txt disallows the index page"},
+        409: {"model": Error, "description": "another discovery run is in progress"},
+    },
+)
 def discover():
     try:
         count = discovery.discover()

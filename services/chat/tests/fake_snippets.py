@@ -33,4 +33,5 @@ FAKE_SNIPPETS = [
         "text": "Mitigating circumstances, such as illness, must be reported with evidence within five working days.",
         "score": 0.74,
     },
+    
 ]

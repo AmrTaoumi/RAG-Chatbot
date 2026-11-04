@@ -33,7 +33,7 @@ def backoff_delay(attempt, response=None):
     return BASE_DELAY * 2 ** (attempt - 1) # we need to justify this number. it it fine to wait max 15 seconds total for a response before fail
 
 # sends a question to the model and returns the answer.
-def ask(question: str) -> str:
+def ask(messages, temperature=0.2):
     api_key, model = load_settings()
     headers = {
         "Authorization" : f"Bearer {api_key}",
@@ -42,9 +42,8 @@ def ask(question: str) -> str:
     body = {
         "model" : model,
         "max_tokens" : 1500,   #increase this number to allow for more tokens. i found that 1500 is able to get a response most of the time wile having 400 will stop at the thinking stage for some modles
-        "messages": [
-            {"role" : "user", "content" : question}
-        ],
+        "temperature": temperature,
+        "messages": messages,
     }
 
     logger.debug("OpenRouter request model=%s max_tokens=%d", model, body["max_tokens"])
@@ -110,7 +109,7 @@ if __name__ == "__main__":
         format='{"time": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}',
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    result = ask("what happens if i miss an exam") # ADD YOUR QUESTION HERE TO TEST IT. WIP
+    result = ask([{"role": "user", "content": "What happens if I miss an exam?"}])
 
     print(result)
 

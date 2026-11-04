@@ -8,7 +8,7 @@ Data Owned:
 
 API Endpoints:
   - [GET] /health - liveness check
-  - [GET] /search - search chunks by query `q` (required) and result count `k` (default 5); results ordered by score descending, ties broken by `chunk_id` ascending
+  - [GET] /search - search chunks by query `q` (required) and result count `k` (default 5, 1–20); results ordered by score descending, ties broken by `chunk_id` ascending
 
 Communicates With:
   - chat (REST, answers `GET /search` calls)

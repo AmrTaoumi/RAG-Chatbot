@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [ingestion, extraction]
+        service: [ingestion, extraction, retrieval]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}

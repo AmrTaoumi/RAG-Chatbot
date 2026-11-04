@@ -12,7 +12,7 @@ import psycopg #to communicate with PostgreSQL databases
 import json
 import pika #communicating with rabbitmq
 from datetime import datetime, timezone
-from fastapi import FastAPI , Query, Header
+from fastapi import FastAPI, Query, Header, HTTPException
 from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(
@@ -112,6 +112,10 @@ def search(
 ):
     # chat sends its correlation ID ,if it is missing this search starts a new one
     correlation_id = x_correlation_id or str(uuid.uuid4())
-    results = run_search(embed(q), k)
+    try:
+        results = run_search(embed(q), k)
+    except psycopg.Error as e:
+        logger.error("database unavailable: %s", e)
+        raise HTTPException(status_code=503, detail="database unavailable")
     publish_retrieval_completed(q, k, results, correlation_id)
     return {"query": q, "results": results}

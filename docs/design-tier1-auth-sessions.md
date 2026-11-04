@@ -10,14 +10,15 @@
 a. As a student, I want to register and log in so my chats are saved. 
 AC: 
 -valid email and a password of 8+ characters gives 201. 
--A duplicate email gives 409. Correct credentials set a session cookie. 
+-A duplicate email gives 409. Correct credentials return an access token and set a refresh-token cookie. 
 -Wrong credentials give 401 with a generic message.
 
 b. As a student, I want to log out so nobody else on a shared PC sees my chats. 
 AC: 
--Logging out invalidates the current session.
--The previous session token can no longer be used.
--The session cookie is cleared.
+-Logging out revokes the refresh token.
+-The revoked refresh token can no longer be used to get a new access token.
+-The refresh cookie is cleared.
+-The access token already issued stays valid until it expires (at most 15 minutes).
 
 c. As a student, I want my conversations to remain private so that I can only access my own chat history. 
 AC: 
@@ -138,11 +139,17 @@ Events:
 
 Changed event: `AnswerGenerated` adds `user_id` and `conversation_id` to its payload. No tokens or passwords in events.
 
-Data model:
+Data model. Each table has one owning service, which creates it on startup (`CREATE TABLE IF NOT EXISTS`) and is the only one that writes to it. IDs are UUIDs stored as `TEXT`, like `doc_id`.
+
+Owned by auth:
 - users(id, email UNIQUE, password_hash, created_at)
-- refresh_tokens(id, user_id FK, token_hash, expires_at, revoked_at, created_at)
-- conversations(id, user_id FK, title, created_at)
-- messages(id, conversation_id FK, role, content, citations JSONB, created_at)
+- refresh_tokens(id, user_id FK to users, token_hash, expires_at, revoked_at, created_at)
+
+Owned by chat:
+- conversations(id, user_id, title, created_at)
+- messages(id, conversation_id FK to conversations, role, content, citations JSONB, created_at)
+
+`conversations.user_id` is a plain `TEXT` column holding the JWT `sub`. It has no foreign key to `users`, because that table belongs to another service. Deleting a user is out of scope for Tier 1.
 
 
 D. How
@@ -166,7 +173,7 @@ E. Plan (Sprint 2 issues)
 | # | Issue | Est. | Owner |
 |---|---|---|---|
 | 1 | Scaffold auth service, add to docker-compose and .env.example | 0.5d | Amr |
-| 2 | DB migrations: users, refresh_tokens, conversations, messages | 1d | Walid |
+| 2 | Table creation on startup: users and refresh_tokens in auth, conversations and messages in chat (each owner creates its own) | 1d | Walid |
 | 3 | Register and login with hashing and JWT issuing | 1.5d | Layla |
 | 4 | Refresh token rotation and logout revocation | 1.5d | Amr |
 | 5 | Chat: JWT verification, scope /chat per user | 1d | Walid |
@@ -186,3 +193,14 @@ F. Verification
 
 
  
+
+G. Topics to consider
+
+Not decided yet. Settle each one before or during the Sprint 2 issue that touches it.
+
+- Origin and cookies (issues 1, 8): the web UI is served by chat on 8004 but calls auth on 8006, which is a different origin. Sprint 1 needed no CORS because the UI and API shared an origin. Decide between CORS on auth (allow only the chat origin, with credentials, and the UI using `fetch(..., {credentials: "include"})`) and proxying `/auth/*` through chat. A proxy avoids CORS but adds a chat → auth path that the diagram does not have.
+- Key setup (issues 1, 5): decide how the RS256 key pair reaches the services. Auth needs the private key, chat only the public key. Options are mounted key files (no escaping of multi-line PEM) or environment variables. Also decide where the key variables are documented (`.env.example`, and the Configuration table in `contracts.md`) and that the private key is never committed.
+- Brute-force protection (issues 3, 4): login has no rate limit or lockout. Decide whether to limit attempts per email and per IP, or to leave it out of scope for Tier 1. Also decide whether emails are lowercased before the uniqueness check.
+- Refresh-token reuse (issue 4): rotation is planned and a reused old token returns 401. Decide whether a detected reuse also revokes all of that user's refresh tokens, since reuse can mean the token was stolen.
+- Semantic cache (issue 5): the semantic cache is shared between users. On a cache hit, the answer must still be saved as a message in the asking user's conversation, and `AnswerGenerated` must still carry that user's `user_id` and `conversation_id`.
+- Libraries (issues 1, 3): pick one password hasher (`argon2-cffi` is suggested over bcrypt). RS256 with PyJWT needs `PyJWT[crypto]`. Email validation with Pydantic's `EmailStr` needs `email-validator`. Pin exact versions like the other services.

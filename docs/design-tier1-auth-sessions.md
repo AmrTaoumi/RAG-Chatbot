@@ -161,6 +161,7 @@ Owned by chat:
 - Signing: RS256 using PyJWT. Only auth holds the private key; chat gets the public key from config. If chat is compromised, it can't mint tokens.
 - Verification in chat: a FastAPI dependency checks the signature and exp, pins algorithms=["RS256"] (which rejects alg: none), then reads user_id from sub.
 - Isolation: every query uses WHERE user_id = :sub. Never take user_id from the request body.
+- Semantic cache: the cache is shared between users, so it holds only question, answer and citations, never user data. On a cache hit, chat still saves the answer as a message in the asking user's conversation, and `AnswerGenerated` still carries that user's `user_id` and `conversation_id`.
 - Logout: revoke the refresh token in the DB. The access token stays valid until it expires, at most 15 minutes. That's an accepted trade-off for an internal chatbot. An optional fix is a jti denylist.
 
 - Alternative considered: server-side sessions.
@@ -188,16 +189,16 @@ Owned by chat:
 - Unit: password hashing; JWT encode/decode; expired, tampered, wrong-key and `alg: none` tokens rejected.
 - Integration (pytest + TestClient + test Postgres): register → login → /auth/me 200; wrong password 401; old refresh token reused 401; refresh after logout 401.
 - Isolation: user A's conversation gives 404 to user B on GET and DELETE and is not in B's list.
+- Semantic cache: user A asks a question and it is cached. User B asks the same question and gets a cache hit. The answer is saved in B's conversation and not A's, and `AnswerGenerated` carries B's `user_id` and `conversation_id`.
 - Security: no plaintext passwords or refresh tokens in the DB, cookie flags set, no tokens in logs.
 - Done when all acceptance criteria pass in CI.
 
-## G. Topics to consider
+## G. Open decisions
 
-Not decided yet. Settle each one before or during the Sprint 2 issue that touches it.
+To settle during the Sprint 2 issue that touches each one:
 
-- Origin and cookies (issues 1, 8): the web UI is served by chat on 8004 but calls auth on 8006, which is a different origin. Sprint 1 needed no CORS because the UI and API shared an origin. Decide between CORS on auth (allow only the chat origin, with credentials, and the UI using `fetch(..., {credentials: "include"})`) and proxying `/auth/*` through chat. A proxy avoids CORS but adds a chat → auth path that the diagram does not have.
-- Key setup (issues 1, 5): decide how the RS256 key pair reaches the services. Auth needs the private key, chat only the public key. Options are mounted key files (no escaping of multi-line PEM) or environment variables. Also decide where the key variables are documented (`.env.example`, and the Configuration table in `contracts.md`) and that the private key is never committed.
-- Brute-force protection (issues 3, 4): login has no rate limit or lockout. Decide whether to limit attempts per email and per IP, or to leave it out of scope for Tier 1. Also decide whether emails are lowercased before the uniqueness check.
-- Refresh-token reuse (issue 4): rotation is planned and a reused old token returns 401. Decide whether a detected reuse also revokes all of that user's refresh tokens, since reuse can mean the token was stolen.
-- Semantic cache (issue 5): the semantic cache is shared between users. On a cache hit, the answer must still be saved as a message in the asking user's conversation, and `AnswerGenerated` must still carry that user's `user_id` and `conversation_id`.
-- Libraries (issues 1, 3): pick one password hasher (`argon2-cffi` is suggested over bcrypt). RS256 with PyJWT needs `PyJWT[crypto]`. Email validation with Pydantic's `EmailStr` needs `email-validator`. Pin exact versions like the other services.
+- Origin and cookies (issues 1, 8): the UI (8004) calls auth (8006), a different origin. CORS on auth (allow only the chat origin, with credentials, and the UI using `fetch(..., {credentials: "include"})`) or proxy `/auth/*` through chat. A proxy adds a chat → auth path that the diagram does not have.
+- Key setup (issues 1, 5): mounted key files or env vars for the RS256 pair. The private key is never committed.
+- Brute-force protection (issue 3): rate limit per email and IP, or out of scope for Tier 1. Also whether emails are lowercased before the uniqueness check.
+- Refresh-token reuse (issue 4): whether a detected reuse revokes all of that user's refresh tokens.
+- Libraries (issues 1, 3): `argon2-cffi`, `PyJWT[crypto]` and `email-validator`, with pinned versions.

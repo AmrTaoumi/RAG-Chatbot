@@ -1,6 +1,6 @@
 # Tier 1 design
 
-## What
+## A. What
 
 - Feature: User Authentication & Session Management
 
@@ -26,7 +26,7 @@ AC:
 -Users cannot access conversations belonging to other accounts.
 -Requesting another user's conversation ID returns HTTP 404 rather than HTTP 403.
 
-##  Where it fits
+## B. Where it fits
 
 - New: auth service on port 8006. It issues and signs tokens and owns users and refresh tokens.
 - Changed: chat (8004) verifies the JWT itself, with no call to auth, and stores conversations per user.
@@ -74,7 +74,7 @@ flowchart LR
     %% C: Tier 1, authentication and sessions (new)
     UI <-->|"C1: POST /auth/register, /auth/login returns access token + refresh cookie"| AUTH
     AUTH <-->|"C2: users, refresh_tokens"| DB
-    AUTH -.->|"C3: UserLoggedIn, C6: UserLoggedOut"| MQ
+    AUTH -.->|"C3: UserLoggedIn, C7: UserLoggedOut"| MQ
     UI <-->|"C4: Authorization Bearer token on /chat and /conversations"| CHAT
     CHAT <-->|"C5: conversations, messages WHERE user_id = sub"| DB
     UI <-->|"C6: POST /auth/refresh, /auth/logout"| AUTH
@@ -91,7 +91,7 @@ flowchart LR
 Legend:
 orange = new (auth service, flow C), yellow border = changed (chat, DB). Blue (A) and green (B) are unchanged from `docs/architecture-event-flow.md`. There is no chat → auth arrow: chat verifies the JWT itself with auth's public key.
 
-## Interfaces
+## C. Interfaces
 
 Auth endpoints:
 
@@ -152,7 +152,8 @@ Owned by chat:
 `conversations.user_id` is a plain `TEXT` column holding the JWT `sub`. It has no foreign key to `users`, because that table belongs to another service. Deleting a user is out of scope for Tier 1.
 
 
-D. How
+## D. How
+
 - Passwords: hash with Argon2 or bcrypt. Never store or log plaintext.
 - Two tokens:
   - Access token: a JWT that lasts 15 minutes. The UI keeps it in memory and sends it as Authorization: Bearer.
@@ -168,7 +169,7 @@ D. How
   - Con: every chat request needs a DB lookup or a call to auth. That couples chat to auth at runtime and adds latency, so auth becomes a single point of failure.
   - Decision: JWT. It's stateless and verified locally, which fits the microservice design. Short expiry plus revocable refresh tokens covers most of the logout weakness.
 
-E. Plan (Sprint 2 issues)
+## E. Plan (Sprint 2 issues)
 
 | # | Issue | Est. | Owner |
 |---|---|---|---|
@@ -182,7 +183,7 @@ E. Plan (Sprint 2 issues)
 | 8 | Web UI: login form, token handling, history view | 2d | Walid |
 | 9 | Tests (section F), update contracts.md and architecture diagram | 1.5d | Layla |
 
-F. Verification
+## F. Verification
 
 - Unit: password hashing; JWT encode/decode; expired, tampered, wrong-key and `alg: none` tokens rejected.
 - Integration (pytest + TestClient + test Postgres): register → login → /auth/me 200; wrong password 401; old refresh token reused 401; refresh after logout 401.
@@ -190,11 +191,7 @@ F. Verification
 - Security: no plaintext passwords or refresh tokens in the DB, cookie flags set, no tokens in logs.
 - Done when all acceptance criteria pass in CI.
 
-
-
- 
-
-G. Topics to consider
+## G. Topics to consider
 
 Not decided yet. Settle each one before or during the Sprint 2 issue that touches it.
 

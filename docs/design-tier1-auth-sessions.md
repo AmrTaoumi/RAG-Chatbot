@@ -28,7 +28,7 @@ AC:
 
 ## B. Where it fits
 
-- New: auth service on port 8006. It issues and signs tokens and owns users and refresh tokens.
+- New: auth service on port 8006. It issues and signs tokens and owns users and refresh tokens. It enables CORS for the chat origin, because the UI (served by chat on 8004) calls it from the browser.
 - Changed: chat (8004) verifies the JWT itself, with no call to auth, and stores conversations per user.
 - Unchanged: ingestion, indexing, retrieval, extraction. 
 - Diagram:
@@ -72,12 +72,12 @@ flowchart LR
     IDX -.->|"B11: ChunksIndexed"| MQ
 
     %% C: Tier 1, authentication and sessions (new)
-    UI <-->|"C1: POST /auth/register, /auth/login returns access token + refresh cookie"| AUTH
+    UI <-->|"C1: POST /auth/register, /auth/login returns access token + refresh cookie (CORS: chat origin only)"| AUTH
     AUTH <-->|"C2: users, refresh_tokens"| DB
     AUTH -.->|"C3: UserLoggedIn, C7: UserLoggedOut"| MQ
     UI <-->|"C4: Authorization Bearer token on /chat and /conversations"| CHAT
     CHAT <-->|"C5: conversations, messages WHERE user_id = sub"| DB
-    UI <-->|"C6: POST /auth/refresh, /auth/logout"| AUTH
+    UI <-->|"C6: POST /auth/refresh, /auth/logout (CORS, credentials: include)"| AUTH
 
     linkStyle 0,1,2,3,4,5,6 stroke:#2563eb,stroke-width:2px
     linkStyle 7,8,9,10,11,12,13,14,15,16,17,18 stroke:#16a34a,stroke-width:2px
@@ -89,7 +89,7 @@ flowchart LR
     class CHAT,DB changed
 ``` 
 Legend:
-orange = new (auth service, flow C), yellow border = changed (chat, DB). Blue (A) and green (B) are unchanged from `docs/architecture-event-flow.md`. There is no chat → auth arrow: chat verifies the JWT itself with auth's public key.
+orange = new (auth service, flow C), yellow border = changed (chat, DB). Blue (A) and green (B) are unchanged from `docs/architecture-event-flow.md`. There is no chat → auth arrow: chat verifies the JWT itself with auth's public key. The UI → auth arrows (C1, C6) are cross-origin (8004 → 8006), so auth allows the chat origin with CORS.
 
 ## C. Interfaces
 
@@ -163,6 +163,11 @@ Owned by chat:
 - Isolation: every query uses WHERE user_id = :sub. Never take user_id from the request body.
 - Semantic cache: the cache is shared between users, so it holds only question, answer and citations, never user data. On a cache hit, chat still saves the answer as a message in the asking user's conversation, and `AnswerGenerated` still carries that user's `user_id` and `conversation_id`.
 - Logout: revoke the refresh token in the DB. The access token stays valid until it expires, at most 15 minutes. That's an accepted trade-off for an internal chatbot. An optional fix is a jti denylist.
+- CORS: the UI is served by chat (8004) but calls auth (8006). That is a different origin, so auth enables CORS.
+  - Auth allows only the chat origin, taken from a `CORS_ALLOWED_ORIGINS` setting (no `*`), with `allow_credentials=True` and the `Authorization` and `Content-Type` headers allowed. FastAPI's `CORSMiddleware` also answers the preflight `OPTIONS` requests.
+  - The UI calls auth with `fetch(url, {credentials: "include"})`, otherwise the browser drops the refresh cookie.
+  - The cookie still works across the two ports: `SameSite` compares sites, not ports, and both are on the same host.
+  - Chat needs no CORS, because the browser calls it from its own origin.
 
 - Alternative considered: server-side sessions.
   - Pro: instant, true logout.
@@ -170,18 +175,23 @@ Owned by chat:
   - Con: every chat request needs a DB lookup or a call to auth. That couples chat to auth at runtime and adds latency, so auth becomes a single point of failure.
   - Decision: JWT. It's stateless and verified locally, which fits the microservice design. Short expiry plus revocable refresh tokens covers most of the logout weakness.
 
+- Alternative considered for CORS: proxy `/auth/*` through chat.
+  - Pro: one origin, so no CORS and no `credentials` flag.
+  - Con: adds a chat → auth runtime path, so an auth outage breaks logins through chat, and chat must forward `Set-Cookie`. It also contradicts the diagram, where chat never calls auth.
+  - Decision: CORS on auth. It keeps chat decoupled (no chat → auth call) and costs a few lines of config.
+
 ## E. Plan (Sprint 2 issues)
 
 | # | Issue | Est. | Owner |
 |---|---|---|---|
-| 1 | Scaffold auth service, add to docker-compose and .env.example | 0.5d | Amr |
+| 1 | Scaffold auth service, add to docker-compose and .env.example, CORS config (`CORS_ALLOWED_ORIGINS`) | 0.5d | Amr |
 | 2 | Table creation on startup: users and refresh_tokens in auth, conversations and messages in chat (each owner creates its own) | 1d | Walid |
 | 3 | Register and login with hashing and JWT issuing | 1.5d | Layla |
 | 4 | Refresh token rotation and logout revocation | 1.5d | Amr |
 | 5 | Chat: JWT verification, scope /chat per user | 1d | Walid |
 | 6 | Chat: conversation list, get and delete endpoints | 1d | Layla |
 | 7 | Publish UserLoggedIn / UserLoggedOut | 0.5d | Amr |
-| 8 | Web UI: login form, token handling, history view | 2d | Walid |
+| 8 | Web UI: login form, token handling (calls auth with `credentials: "include"`), history view | 2d | Walid |
 | 9 | Tests (section F), update contracts.md and architecture diagram | 1.5d | Layla |
 
 ## F. Verification
@@ -191,13 +201,13 @@ Owned by chat:
 - Isolation: user A's conversation gives 404 to user B on GET and DELETE and is not in B's list.
 - Semantic cache: user A asks a question and it is cached. User B asks the same question and gets a cache hit. The answer is saved in B's conversation and not A's, and `AnswerGenerated` carries B's `user_id` and `conversation_id`.
 - Security: no plaintext passwords or refresh tokens in the DB, cookie flags set, no tokens in logs.
+- CORS: a request to auth with `Origin` set to the chat origin gets `Access-Control-Allow-Origin` for that origin and `Access-Control-Allow-Credentials: true`. An unlisted origin gets no CORS headers. The preflight `OPTIONS` request succeeds. Manual check in the browser: login from the UI on 8004 sets the refresh cookie, and `/auth/refresh` works afterwards.
 - Done when all acceptance criteria pass in CI.
 
 ## G. Open decisions
 
 To settle during the Sprint 2 issue that touches each one:
 
-- Origin and cookies (issues 1, 8): the UI (8004) calls auth (8006), a different origin. CORS on auth (allow only the chat origin, with credentials, and the UI using `fetch(..., {credentials: "include"})`) or proxy `/auth/*` through chat. A proxy adds a chat → auth path that the diagram does not have.
 - Key setup (issues 1, 5): mounted key files or env vars for the RS256 pair. The private key is never committed.
 - Brute-force protection (issue 3): rate limit per email and IP, or out of scope for Tier 1. Also whether emails are lowercased before the uniqueness check.
 - Refresh-token reuse (issue 4): whether a detected reuse revokes all of that user's refresh tokens.

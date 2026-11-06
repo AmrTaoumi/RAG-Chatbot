@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import threading
 import time
 import urllib.robotparser
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import unquote, urljoin, urlparse
 
@@ -15,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 EXCHANGE = "rag.topic"
 ROUTING_KEY = "document.discovered"
+QUEUE = "ingestion.fetch"
 
 CRAWL_DELAY = 5  # seconds, "Crawl-delay: 5" in lancaster.ac.uk/robots.txt
 last_request = None
+request_lock = threading.Lock()  # discovery and the fetcher share one crawl delay
 
 LOCK_ID = 7_001  # arbitrary key for the Postgres advisory lock
 
@@ -50,14 +54,19 @@ def publish(docs, rabbitmq_url, on_published=None):
     try:
         channel = connection.channel()
         channel.exchange_declare(exchange=EXCHANGE, exchange_type="topic", durable=True)
+        # declare the queue as well, so an event sent before the fetcher starts is kept
+        channel.queue_declare(queue=QUEUE, durable=True)
+        channel.queue_bind(queue=QUEUE, exchange=EXCHANGE, routing_key=ROUTING_KEY)
         # with confirms + mandatory, an unroutable message raises instead of vanishing
         channel.confirm_delivery()
         for doc in docs:
             event = {
-                "event": "DocumentDiscovered",
-                "url": doc["url"],
-                "title": doc["title"],
-                "discovered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "eventType": "DocumentDiscovered",
+                "eventId": str(uuid.uuid4()),
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                # one per document; the fetched, extracted and indexed events copy it
+                "correlationId": str(uuid.uuid4()),
+                "payload": {"url": doc["url"], "title": doc["title"]},
             }
             channel.basic_publish(
                 exchange=EXCHANGE,
@@ -74,14 +83,15 @@ def publish(docs, rabbitmq_url, on_published=None):
 
 def polite_get(client, url, delay):
     global last_request
-    if last_request is not None:
-        wait = delay - (time.monotonic() - last_request)
-        if wait > 0:
-            time.sleep(wait)
-    try:
-        return client.get(url)
-    finally:
-        last_request = time.monotonic()
+    with request_lock:
+        if last_request is not None:
+            wait = delay - (time.monotonic() - last_request)
+            if wait > 0:
+                time.sleep(wait)
+        try:
+            return client.get(url)
+        finally:
+            last_request = time.monotonic()
 
 
 def load_robots(client, url):

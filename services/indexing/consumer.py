@@ -31,7 +31,9 @@ def setup(channel):
 def on_message(channel, method, body, conn): #runs every time a letter arrives
     try:
         event = handler.handle_extracted(body, conn) # opens the letter (body is the raw JSON), then chunks, embeds and saves. It returns the ChunksIndexed letter to send
-    except handler.Unreadable as e:
+    except (handler.Unreadable, psycopg.DataError, psycopg.IntegrityError) as e:
+        # the data itself is bad, so retrying would fail the same way and block the queue;
+        # connection errors are not caught here, they are retried
         logger.error("discarding message: %s", e)
         channel.basic_ack(delivery_tag=method.delivery_tag)
         return

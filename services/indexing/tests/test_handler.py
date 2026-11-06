@@ -3,7 +3,7 @@ The 4 tests check, :
 - the outgoing letter has the right shape
 - every chunk gets its embedding
 -an empty page gives 0 chunks
-- 7 kinds of broken letter all raise Unreadable, and nothing gets saved
+- 8 kinds of broken letter all raise Unreadable, and nothing gets saved
 
 '''
 
@@ -92,6 +92,7 @@ def test_document_with_no_text_indexes_zero_chunks(saved):
         extracted(pages="text"),
         extracted(pages=[{"page": "1", "text": "x"}]),
         extracted(pages=[{"page": 1}]),
+        extracted(pages=[{"page": 1, "text": "a"}, {"page": 1, "text": "b"}]),
     ],
 )
 def test_bad_messages_are_unreadable_and_nothing_is_stored(body, saved):

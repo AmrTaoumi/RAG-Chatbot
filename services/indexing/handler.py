@@ -56,6 +56,10 @@ def parse(body):
         for page in payload["pages"]:
             if not isinstance(page["page"], int) or not isinstance(page["text"], str):
                 raise ValueError("payload.pages has a bad page")
+        # two pages with one number would produce the same chunk_id and break the insert
+        numbers = [page["page"] for page in payload["pages"]]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("payload.pages has duplicate page numbers")
     except (ValueError, KeyError, TypeError) as e:
         raise Unreadable(f"bad message: {e!r}")
     return message

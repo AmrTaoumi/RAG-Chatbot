@@ -4,18 +4,19 @@ import sys
 import time
 import httpx
 
-#  TO USE THIS YOU MUST FIRST TYPE : export OPENROUTER_API_KEY="ADD YOUR OWN KEY HERE"
-#  THIS IS THE WAY IM TESTING THE API KEY IT SAVES IT ON YOUR TERMINAL 
-#  MUST DOWNLOAD HTTPX ON YOUR VENV BEFORE TESTING 
+# OpenRouter client for the chat service.
+# Reads OPENROUTER_API_KEY and OPENROUTER_MODEL from the environment (.env via docker compose).
 OPENROUTER_URL =  "https://openrouter.ai/api/v1/chat/completions"
 
 
 
 logger = logging.getLogger(__name__)
 
-MAX_ATTEMPTS = 5         # TODO choice for max attempts we need to justify it.
-BASE_DELAY = 1         # TODO: seconds for the first try it goes up per attempt. we need to justify the choice
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+MAX_ATTEMPTS = 5         # 4 waits of 1+2+4+8 = 15s max, so a user never waits much longer than 15s plus request time
+BASE_DELAY = 1         # seconds; doubles each retry (exponential backoff) to give rate limits time to reset
+RETRYABLE_STATUS = {429, 500, 502, 503, 504} # temporary errors
+MAX_TOKENS = 4000         # reasoning models used all 400 tokens on thinking and returned no answer. 4000 tokens is the max alloted by OPENROUTER
+TIMEOUT_SECONDS = 30
 
 
 def load_settings():
@@ -41,7 +42,7 @@ def ask(messages, temperature=0.2):
 
     body = {
         "model" : model,
-        "max_tokens" : 1500,   #increase this number to allow for more tokens. i found that 1500 is able to get a response most of the time wile having 400 will stop at the thinking stage for some modles
+        "max_tokens" : MAX_TOKENS,   #increase this number to allow for more tokens. i found that 1500 is able to get a response most of the time wile having 400 will stop at the thinking stage for some modles
         "temperature": temperature,
         "messages": messages,
     }
@@ -53,9 +54,9 @@ def ask(messages, temperature=0.2):
         is_last_attempt = (attempt == MAX_ATTEMPTS)
 
         try:
-            response = httpx.post(OPENROUTER_URL, headers=headers, json=body, timeout=30)# change timout here.
-
-        except httpx.TimeoutException:
+            response = httpx.post(OPENROUTER_URL, headers=headers, json=body, timeout=TIMEOUT_SECONDS)
+        
+        except httpx.TransportError:
             if is_last_attempt:
                 logger.error("OpenRouter timed out attempts=%d", attempt)
                 raise RuntimeError(f"OpenRouter timed out after {attempt} attempts")
@@ -93,14 +94,15 @@ def ask(messages, temperature=0.2):
             logger.warning("OpenRouter status=%d attempt=%d/%d retry_in=%ds",response.status_code, attempt, MAX_ATTEMPTS, delay)
             time.sleep(delay)
             continue
-
-        data = response.json()
-        message = data["error"]["message"]
+        # vlaue error check if it is a jsnon and key error to check the key
+        try:
+            message = response.json()["error"]["message"]
+        except (ValueError, KeyError):
+            message = response.text[:200]
         logger.error("OpenRouter failed status=%d message=%s", response.status_code, message)
         raise RuntimeError(f"OpenRouter error {response.status_code}: {message}")
 
-
-    
+  
 if __name__ == "__main__":
 
     logging.basicConfig(
@@ -111,19 +113,5 @@ if __name__ == "__main__":
     
     logging.getLogger("httpx").setLevel(logging.WARNING)
     result = ask([{"role": "user", "content": "What happens if I miss an exam?"}])
-    
+
     print(result)
-
-
-
-
-
-
-
-
-
-
-
-
-
-    

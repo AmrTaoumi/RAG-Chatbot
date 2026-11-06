@@ -86,26 +86,35 @@ def build_response(answer, snippets):
     cleaned = remove_invalid_markers(answer, len(snippets))
     return {"answer": cleaned, "citations": citations}
 
+# if __name__ == "__main__":
+#     import logging, sys
+#     from client import ask
+#     from tests.fake_snippets import FAKE_SNIPPETS
+
+#     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+#     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+#     messages = build_messages("What happens if I miss an exam? and can you give me any adive?", FAKE_SNIPPETS)
+    
+#     # print(ask(messages))
+#     # print(messages)
+#     # answer = "...zero for that assessment [1][7]. Mitigating[0][3][4] ...  ... resit period [2][8]." #testing
+#     # print(extract_citations(answer, FAKE_SNIPPETS))
+#     tests = [
+#         "...zero for that assessment [1][7]. Mitigating ... [3]. ... resit period [2][0].",
+#         "You will be expelled [9].",
+#         "I'm not certain based on the available documents.",
+#     ]
+#     # for answer in tests:
+#     #     print(build_response(answer, FAKE_SNIPPETS))
+#     #     print()
 if __name__ == "__main__":
-    import logging, sys
+    import sys
     from client import ask
     from tests.fake_snippets import FAKE_SNIPPETS
 
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    messages = build_messages("What happens if I miss an exam? and can you give me any adive?", FAKE_SNIPPETS)
-    
-    # print(ask(messages))
-    # print(messages)
-    # answer = "...zero for that assessment [1][7]. Mitigating[0][3][4] ...  ... resit period [2][8]." #testing
-    # print(extract_citations(answer, FAKE_SNIPPETS))
-    tests = [
-        "...zero for that assessment [1][7]. Mitigating ... [3]. ... resit period [2][0].",
-        "You will be expelled [9].",
-        "I'm not certain based on the available documents.",
-    ]
-    # for answer in tests:
-    #     print(build_response(answer, FAKE_SNIPPETS))
-    #     print()
-
+    messages = build_messages("What happens if I miss an exam?", FAKE_SNIPPETS)
+    print(build_response(ask(messages), FAKE_SNIPPETS))

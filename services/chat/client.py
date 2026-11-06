@@ -108,9 +108,10 @@ if __name__ == "__main__":
         level=logging.INFO,
         format='{"time": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}',
     )
+    
     logging.getLogger("httpx").setLevel(logging.WARNING)
     result = ask([{"role": "user", "content": "What happens if I miss an exam?"}])
-
+    
     print(result)
 
 

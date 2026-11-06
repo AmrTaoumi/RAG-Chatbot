@@ -26,7 +26,7 @@ RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL") or "http://retrieval:8000"
 TOP_K = 5
 EXCHANGE = "rag.topic"
 ROUTING_KEY = "answer.generated"
-SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.5" )
+SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.35" )
 
 app = FastAPI()
 

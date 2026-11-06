@@ -26,6 +26,7 @@ RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL") or "http://retrieval:8000"
 TOP_K = 5
 EXCHANGE = "rag.topic"
 ROUTING_KEY = "answer.generated"
+SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.5" )
 
 app = FastAPI()
 
@@ -91,8 +92,13 @@ def chat(request: ChatRequest):
         logger.error("retrieval failed correlationId=%s error=%s", correlation_id, e)
         raise HTTPException(status_code=503, detail="retrieval unavailable")
 
-    if not snippets:
-        result = {"answer": FALLBACK_ANSWER, "citations": []}
+    if not snippets or snippets[0]["score"] < SCORE_THRESHOLD:
+        top_score = snippets[0]["score"] if snippets else None
+        logger.info(
+            "skipping LLM correlationId=%s top_score=%s threshold=%s",
+            correlation_id, top_score, SCORE_THRESHOLD,
+        )
+        result = {"answer": FALLBACK_ANSWER, "citations": []}        
     else:
         messages = build_messages(request.question, snippets)
         try:

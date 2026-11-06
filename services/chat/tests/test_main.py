@@ -67,3 +67,23 @@ def test_llm_error_returns_502(monkeypatch, published):
 
 def test_empty_question_rejected():
     assert client.post("/chat", json={"question": ""}).status_code == 422
+
+def test_low_score_gives_fallback_without_calling_llm(monkeypatch, published):
+    low = [dict(FAKE_SNIPPETS[0], score=main.SCORE_THRESHOLD - 0.1)]
+    monkeypatch.setattr(main, "search", lambda q, cid: low)
+
+    def fail(messages):
+        raise AssertionError("LLM should not be called")
+
+    monkeypatch.setattr(main, "ask", fail)
+    r = client.post("/chat", json={"question": "where is the library?"})
+    assert r.json() == {"answer": FALLBACK_ANSWER, "citations": []}
+    assert len(published) == 1
+
+
+def test_score_at_threshold_calls_llm(monkeypatch, published):
+    exact = [dict(FAKE_SNIPPETS[0], score=main.SCORE_THRESHOLD)]
+    monkeypatch.setattr(main, "search", lambda q, cid: exact)
+    monkeypatch.setattr(main, "ask", lambda messages: "Zero marks [1].")
+    r = client.post("/chat", json={"question": "late penalty?"})
+    assert r.json()["citations"] != []

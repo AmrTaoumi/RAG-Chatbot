@@ -51,3 +51,10 @@ def test_documents_creates_the_table_first(monkeypatch):
     monkeypatch.setattr(store, "list_documents", lambda c: calls.append("list_documents") or [])
     assert client.get("/documents").json() == []
     assert calls == ["ensure_table", "list_documents"]
+
+
+def test_openapi_docs():
+    assert client.get("/docs").status_code == 200
+    paths = client.get("/openapi.json").json()["paths"]
+    assert {"/health", "/documents"} <= set(paths)
+    assert {"200", "503"} <= set(paths["/documents"]["get"]["responses"])

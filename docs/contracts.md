@@ -102,7 +102,7 @@ Response `200 OK`:
 
 **GET /search**
 
-Query params: `q` (string, required), `k` (int, default 5)
+Query params: `q` (string, required, non-empty), `k` (int, default 5, min 1, max 20)
 
 Optional header: `X-Correlation-ID` (UUID). Retrieval puts it in `RetrievalCompleted.correlationId`, or creates one if missing.
 
@@ -124,7 +124,11 @@ Response `200 OK`:
 }
 ```
 
-Results ordered by score descending, tie-break on `chunk_id` ascending.
+Results ordered by score descending, tie-break on `chunk_id` ascending. Ordering uses the exact distance; `score` in the response is rounded to 4 decimals, so two results can show the same score and not be in `chunk_id` order.
+
+Errors:
+- `422` — `q` missing or empty, or `k` outside 1–20.
+- `503` with `{"detail": "database unavailable"}` — Postgres cannot be reached. `/health` still answers `200`.
 
 ---
 

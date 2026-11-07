@@ -23,7 +23,7 @@ logging.getLogger("pika").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL") or "http://retrieval:8000"
-TOP_K = 5
+TOP_K = 8
 EXCHANGE = "rag.topic"
 ROUTING_KEY = "answer.generated"
 

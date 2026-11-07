@@ -24,10 +24,13 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
+QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+
+model = SentenceTransformer(MODEL_NAME)
 
 def embed(text): # turns text into 384 numbers
-    return model.encode(text, normalize_embeddings=True).tolist()
+    return model.encode(QUERY_PREFIX + text, normalize_embeddings=True).tolist()
 
 SEARCH_SQL = """
     SELECT chunk_id, doc_id, title, url, page, text,

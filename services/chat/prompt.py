@@ -10,7 +10,9 @@ SYSTEM_PROMPT = (
     "Cite every fact with its source number in square brackets, like [1] or [2][3]. "
     "Only use numbers that appear in the context. "
     "Do not give personal advice or recommendations; only state what the regulations say. "
-    f'If the context does not contain the answer, reply exactly: "{FALLBACK_ANSWER}"'
+    "If the context covers the topic but not the exact detail asked (for example a specific number "
+    "or time period), state what the context does say and note that it does not give that detail. "
+    f'Reply exactly "{FALLBACK_ANSWER}" only if the context has nothing relevant to the question.'
 )
 
 

@@ -84,13 +84,13 @@ flowchart LR
 
 ### Flow A — answering a question
 
-1. **A1** The browser loads the web UI from chat (`GET /`) and sends the user's question (`POST /chat`).
-2. **A2** Chat embeds the question and looks for a similar, unexpired question in `semantic_cache`. On a cache hit it skips to A8.
+1. **A1** *(web UI planned; today clients call `POST /chat` directly)* The browser loads the web UI from chat (`GET /`) and sends the user's question (`POST /chat`).
+2. **A2** *(planned, not yet implemented)* Chat embeds the question and looks for a similar, unexpired question in `semantic_cache`. On a cache hit it skips to A8.
 3. **A3** On a cache miss, chat calls retrieval `GET /search` with the question and an `X-Correlation-ID` header.
 4. **A4** Retrieval embeds the question with the same model as indexing and returns the top-k nearest chunks by cosine similarity, each with title, page and URL.
 5. **A5** Retrieval publishes `RetrievalCompleted`.
 6. **A6** Chat builds a prompt from the question and the retrieved chunks and sends it to the OpenRouter LLM. If no chunk supports an answer, chat returns the fallback "I'm not certain based on the available documents."
-7. **A7** Chat saves the answer and citations in `semantic_cache` for `CACHE_TTL_SECONDS` (default 24 hours).
+7. **A7** *(planned, not yet implemented)* Chat saves the answer and citations in `semantic_cache` for `CACHE_TTL_SECONDS` (default 24 hours).
 8. **A8** Chat publishes `AnswerGenerated`, then returns the answer and citations (title, page, link) to the browser over the A1 connection.
 
 ### Services
@@ -99,11 +99,13 @@ flowchart LR
 |------------|------|-------------------------------------------------------------|----------------------------|
 | ingestion  | 8001 | Discover PDF links on MARP page, download PDFs              | running                    |
 | extraction | 8005 | Extract per-page text from PDFs                             | running                    |
-| indexing   | 8002 | Chunk (~200 tokens, 40 overlap), embed, store               | planned (chunker done)     |
-| retrieval  | 8003 | Vector search over pgvector                                 | planned                    |
-| chat       | 8004 | Semantic cache, prompt + LLM, citations, serves web UI      | planned                    |
+| indexing   | 8002 | Chunk (~200 tokens, 40 overlap), embed, store               | running                    |
+| retrieval  | 8003 | Vector search over pgvector                                 | running                    |
+| chat       | 8004 | Semantic cache, prompt + LLM, citations, serves web UI      | running (cache and UI planned) |
 | postgres   | 5432 | Postgres 16 + pgvector                                      | running                    |
 | rabbitmq   | 5672 / 15672 | AMQP broker / management UI                         | running                    |
+
+Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval), `semantic_cache` (chat, planned). `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet; RabbitMQ drops them until one binds a queue.
 
 Per-service details: [`docs/services/`](docs/services/). Planned auth and session design: [`docs/design-tier1-auth-sessions.md`](docs/design-tier1-auth-sessions.md).
 
@@ -130,7 +132,7 @@ Per-service details: [`docs/services/`](docs/services/). Planned auth and sessio
 
 - Docker with Compose v2
 - Git
-- Free ports: 5432, 5672, 15672, 8001, 8005
+- Free ports: 5432, 5672, 15672, 8001, 8002, 8003, 8004, 8005
 - (Python 3.12 only if you run tests outside Docker)
 
 ### Installation
@@ -141,7 +143,7 @@ cd RAG-Chatbot-
 cp .env.example .env
 ```
 
-Defaults in `.env.example` work for the pipeline. Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` once the chat service lands.
+Defaults in `.env.example` work for the pipeline. Set `OPENROUTER_API_KEY` for chat; `OPENROUTER_MODEL` is not chosen yet.
 
 ### Running
 
@@ -153,6 +155,9 @@ Wait until postgres and rabbitmq report healthy. Then check:
 
 ```bash
 curl localhost:8001/health      # ingestion  -> {"status":"ok"}
+curl localhost:8002/health      # indexing   -> {"status":"ok"}
+curl localhost:8003/health      # retrieval  -> {"status":"ok"}
+curl localhost:8004/health      # chat       -> {"status":"ok"}
 curl localhost:8005/health      # extraction -> {"status":"ok"}
 ```
 
@@ -164,14 +169,21 @@ Load documents:
 curl -X POST localhost:8001/discover
 ```
 
-Ingestion finds PDF links on the MARP page and downloads them one every 5 seconds (site `robots.txt` crawl delay). Extraction picks each file up automatically. Watch progress with `docker compose logs -f ingestion extraction`.
+Ingestion finds PDF links on the MARP page and downloads them one every 5 seconds (site `robots.txt` crawl delay). Extraction, indexing and the rest of the pipeline pick each file up automatically. Watch progress with `docker compose logs -f ingestion extraction indexing`.
+
+Ask a question:
+
+```bash
+curl -X POST localhost:8004/chat -H 'Content-Type: application/json' \
+  -d '{"question": "what is the late submission penalty?"}'
+```
 
 Stop: `docker compose down` (add `-v` to also wipe the database and downloaded PDFs).
 
 ### Tests
 
 ```bash
-cd services/ingestion   # or services/extraction
+cd services/ingestion   # or extraction, indexing, retrieval, chat
 pip install -r requirements.txt
 python -m pytest
 ```

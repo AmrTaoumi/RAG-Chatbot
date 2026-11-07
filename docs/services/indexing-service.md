@@ -8,7 +8,6 @@ Data Owned:
 
 API Endpoints:
   - [GET] /health - liveness check
-  - [GET] /stats - counts of indexed documents and chunks, e.g. `{"documents": 16, "chunks": 534}`
 
 Communicates With:
   - extraction (Events, consumes `DocumentExtracted` from queue `indexing.documents`)

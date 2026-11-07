@@ -84,20 +84,6 @@ Errors:
 
 ---
 
-### Indexing (`localhost:8002`)
-
-**GET /stats**  
-Counts what is stored in `chunks`.
-
-Response `200 OK`:
-```json
-{"documents": 16, "chunks": 534}
-```
-
-`documents` is the number of distinct `doc_id` values and `chunks` is the row count.
-
----
-
 ### Retrieval (`localhost:8003`)
 
 **GET /search**

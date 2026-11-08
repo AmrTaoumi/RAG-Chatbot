@@ -1,0 +1,4 @@
+body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+input { width: 70%; padding: 8px; }
+button { padding: 8px 12px; }
+#answer { white-space: pre-wrap; }

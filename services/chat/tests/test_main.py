@@ -87,3 +87,13 @@ def test_score_at_threshold_calls_llm(monkeypatch, published):
     monkeypatch.setattr(main, "ask", lambda messages: "Zero marks [1].")
     r = client.post("/chat", json={"question": "late penalty?"})
     assert r.json()["citations"] != []
+
+def test_index_serves_the_demo_page():
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "MARP Guide" in r.text
+
+def test_static_css_and_js_are_served():
+    assert client.get("/static/style.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200

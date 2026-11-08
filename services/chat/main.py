@@ -5,6 +5,9 @@ import sys
 import uuid
 from datetime import datetime, timezone
 
+from pathlib import Path
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import httpx
 import pika
 from fastapi import FastAPI, HTTPException
@@ -26,10 +29,14 @@ RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL") or "http://retrieval:8000"
 TOP_K = 5
 EXCHANGE = "rag.topic"
 ROUTING_KEY = "answer.generated"
+
+STATIC_DIR = Path(__file__).parent / "static"
+
 SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.35" )
 
 app = FastAPI()
 
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)   # empty question FastAPI returns 422 
@@ -58,7 +65,7 @@ def publish_answer_generated(question, result, correlation_id):
             "citations": result["citations"],
         },
     }
-    # the answer matters more than the event, so a broker problem is logged, not raised
+    # the answer matters more than the event so a broker problem is logged, not raised
     try:
         connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
         try:
@@ -80,6 +87,9 @@ def publish_answer_generated(question, result, correlation_id):
 def health():
     return {"status": "ok"}
 
+@app.get("/")
+def index():
+    return FileResponse(STATIC_DIR / "index.html")
 
 @app.post("/chat")
 def chat(request: ChatRequest):

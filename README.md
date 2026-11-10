@@ -13,7 +13,7 @@ A retrieval-augmented chatbot that answers questions using your own documents.
 
 ## Architecture
 
-Event-driven microservices. Services talk by REST (synchronous) and by RabbitMQ events (asynchronous, exchange `rag.topic`). PDFs move between services over a shared Docker volume, never through the broker. Full diagram, step-by-step flows and event schemas: [`docs/architecture-event-flow.md`](docs/architecture-event-flow.md), [`docs/events/event-catalogue.md`](docs/events/event-catalogue.md), [`docs/contracts.md`](docs/contracts.md).
+Event-driven microservices. Services talk by REST (synchronous) and by RabbitMQ events (asynchronous, exchange `rag.topic`). PDFs move between services over a shared Docker volume, never through the broker. Full diagram, step-by-step flows and event schemas: [`docs/architecture/architecture-event-flow.md`](docs/architecture/architecture-event-flow.md), [`docs/events/event-catalogue.md`](docs/events/event-catalogue.md), [`docs/architecture/contracts.md`](docs/architecture/contracts.md).
 
 Two flows:
 
@@ -106,9 +106,9 @@ Each table has one owning service: `discovered_documents` (ingestion), `document
 
 Per-service details: [`docs/services/`](docs/services/).
 
-Feature designs for Sprint 2: Tier 1 auth and sessions ([`docs/design-tier1-auth-sessions.md`](docs/design-tier1-auth-sessions.md)), Tier 2 rate limiting and caching ([`docs/design-tier2-rate-limit-cache.md`](docs/design-tier2-rate-limit-cache.md)).
+Feature designs for Sprint 2: Tier 1 auth and sessions ([`docs/features/design-tier1-auth-sessions.md`](docs/features/design-tier1-auth-sessions.md)), Tier 2 rate limiting and caching ([`docs/features/design-tier2-rate-limit-cache.md`](docs/features/design-tier2-rate-limit-cache.md)).
 
-Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum-artefacts.md`](docs/scrum-artefacts.md).
+Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum/scrum-artefacts.md`](docs/scrum/scrum-artefacts.md).
 
 ## Technology Stack
 

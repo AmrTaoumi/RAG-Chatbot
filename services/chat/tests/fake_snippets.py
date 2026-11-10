@@ -1,5 +1,5 @@
 # services/chat/tests/fake_snippets.py
-# Hard-coded snippets in the exact shape retrieval's GET /search returns (docs/contracts.md).
+# Hard-coded snippets in the exact shape retrieval's GET /search returns (docs/architecture/contracts.md).
 
 UG_DOC_ID = "3b5d5c3712955042212316173ccf37be"   # fake MD5 of the URL (32 hex chars)
 UG_URL = "https://www.lancaster.ac.uk/media/.../UG-Assess-Regs.pdf"

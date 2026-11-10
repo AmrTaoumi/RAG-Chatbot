@@ -2,7 +2,7 @@
 
 **Status:** Agreed at the contract workshop (S1-02, 20 Oct 2026); approved by all three members at the Sprint 1 freeze (10 Nov 2026).
 
-See `docs/architecture-event-flow.md` for the diagram, `docs/events/event-catalogue.md` for the events and `docs/services/` for one description per service.
+See `docs/architecture/architecture-event-flow.md` for the diagram, `docs/events/event-catalogue.md` for the events and `docs/services/` for one description per service.
 
 ---
 
@@ -232,4 +232,4 @@ Retrieval reads this table, read-only.
 
 ### Planned for Sprint 2
 
-Tier 1 adds auth and session tables (`users`, `refresh_tokens`, `conversations`, `messages`), and Tier 2 adds a semantic cache owned by chat. Neither exists yet. See [`design-tier1-auth-sessions.md`](design-tier1-auth-sessions.md) and [`design-tier2-rate-limit-cache.md`](design-tier2-rate-limit-cache.md). This file is updated when they are built.
+Tier 1 adds auth and session tables (`users`, `refresh_tokens`, `conversations`, `messages`), and Tier 2 adds a semantic cache owned by chat. Neither exists yet. See [`design-tier1-auth-sessions.md`](../features/design-tier1-auth-sessions.md) and [`design-tier2-rate-limit-cache.md`](../features/design-tier2-rate-limit-cache.md). This file is updated when they are built.

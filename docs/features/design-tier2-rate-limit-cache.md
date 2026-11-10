@@ -53,7 +53,7 @@ flowchart LR
     class CHAT,DB changed
 ```
 
-Orange = new (rate limits R, cache A2/A7, cache invalidation C). Yellow border = changed (chat, DB). Blue (A) and green (B) are the flows from `docs/architecture-event-flow.md`, renumbered to include the new cache steps (A2, A7), with the pipeline services collapsed into one box. On a cache hit, chat skips A3–A6.
+Orange = new (rate limits R, cache A2/A7, cache invalidation C). Yellow border = changed (chat, DB). Blue (A) and green (B) are the flows from `docs/architecture/architecture-event-flow.md`, renumbered to include the new cache steps (A2, A7), with the pipeline services collapsed into one box. On a cache hit, chat skips A3–A6.
 
 ## C. Interfaces
 

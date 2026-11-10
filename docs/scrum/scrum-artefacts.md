@@ -50,7 +50,7 @@ As practised in Sprint 1:
 - [ ] Work is done on a `feature/<task-id>-…`, `fix/…` or `docs/…` branch and merged into `develop` through a reviewed pull request.
 - [ ] CI is green: `pytest` passes for each service in the matrix and `docker compose build` succeeds.
 - [ ] The service starts under `docker compose up` and answers `GET /health`.
-- [ ] Any change to an interface also updates `docs/contracts.md`, `docs/events/event-catalogue.md` or the service doc.
+- [ ] Any change to an interface also updates `docs/architecture/contracts.md`, `docs/events/event-catalogue.md` or the service doc.
 - [ ] The issue is closed and the board card is moved to *Done*.
 
 ---
@@ -101,7 +101,7 @@ These are refined and turned into issues at Sprint 2 planning (week 6). Rows 1�
 | 3 | Integration tests across services in CI + coverage report | Quality | Brief M8 | TBD | TBD |
 | 4 | Web chat: sources panel with link-out per citation | UX | Brief 2.1.8 | TBD | TBD |
 | 5 | Re-tune `SCORE_THRESHOLD` against the test catalogue and record the scores | Quality | Retro action A2 | TBD | TBD |
-| T1-1 | Scaffold auth service, compose, `.env.example`, CORS (`CORS_ALLOWED_ORIGINS`) | Tier 1 | [Tier 1 design §E](design-tier1-auth-sessions.md) | 0.5d | Amr |
+| T1-1 | Scaffold auth service, compose, `.env.example`, CORS (`CORS_ALLOWED_ORIGINS`) | Tier 1 | [Tier 1 design §E](../features/design-tier1-auth-sessions.md) | 0.5d | Amr |
 | T1-2 | Create tables on startup (auth: users, refresh_tokens; chat: conversations, messages) | Tier 1 | Tier 1 §E | 1d | Walid |
 | T1-3 | Register and login with hashing and JWT issuing | Tier 1 | Tier 1 §E | 1.5d | Layla |
 | T1-4 | Refresh token rotation and logout revocation | Tier 1 | Tier 1 §E | 1.5d | Amr |
@@ -110,7 +110,7 @@ These are refined and turned into issues at Sprint 2 planning (week 6). Rows 1�
 | T1-7 | Publish `UserLoggedIn` / `UserLoggedOut` | Tier 1 | Tier 1 §E | 0.5d | Amr |
 | T1-8 | Web UI: login form, token handling, history view | Tier 1 | Tier 1 §E | 2d | Walid |
 | T1-9 | Tier 1 tests, update `contracts.md` and the architecture diagram | Tier 1 | Tier 1 §E | 1.5d | Layla |
-| T2-1 | Chat DB connection, create tables, env vars, load bge-small in chat | Tier 2 | [Tier 2 design §E](design-tier2-rate-limit-cache.md) | 0.5d | Amr |
+| T2-1 | Chat DB connection, create tables, env vars, load bge-small in chat | Tier 2 | [Tier 2 design §E](../features/design-tier2-rate-limit-cache.md) | 0.5d | Amr |
 | T2-2 | Per-user limit (429) and global LLM budget (503), counting retries | Tier 2 | Tier 2 §E | 2d | Walid |
 | T2-3 | Semantic cache: lookup, save, `cached` field | Tier 2 | Tier 2 §E | 1.5d | Layla |
 | T2-4 | `ChunksIndexed` consumer clears the cache; update the event catalogue | Tier 2 | Tier 2 §E | 1d | Amr |

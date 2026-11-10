@@ -2,7 +2,7 @@
 
 **Status:** Agreed at the contract workshop (S1-02, 20 Oct 2026); approved by all three members at the Sprint 1 freeze (10 Nov 2026).
 
-All events published on RabbitMQ. REST endpoints, database tables and shared conventions are in `docs/contracts.md`. The event flow diagram is in `docs/architecture-event-flow.md`.
+All events published on RabbitMQ. REST endpoints, database tables and shared conventions are in `docs/architecture/contracts.md`. The event flow diagram is in `docs/architecture/architecture-event-flow.md`.
 
 Exchange: `rag.topic` (topic exchange, durable). All events are JSON with the envelope below.
 
@@ -57,7 +57,7 @@ Triggered by: ingestion
 Consumed by: ingestion (fetcher)  
 Purpose: Tell the fetcher that a new MARP PDF link exists, so it is downloaded exactly once.
 
-`doc_id` is not in the payload. It is derived from `url` (MD5, see Shared Conventions in `docs/contracts.md`). A new `correlationId` is created here for each document.
+`doc_id` is not in the payload. It is derived from `url` (MD5, see Shared Conventions in `docs/architecture/contracts.md`). A new `correlationId` is created here for each document.
 
 ```json
 {

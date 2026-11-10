@@ -1,5 +1,5 @@
 '''
-See docs/chunks.md for the full justification
+See docs/architecture/chunks.md for the full justification
 
 - page boundaries: every chunk has exactly one page number, so citations point to the right page.
 - 200 tokens: bge-small-en-v1.5 reads up to 512 of its own tokens; 200 tiktoken tokens are ~311 of them, so chunks are never cut off.

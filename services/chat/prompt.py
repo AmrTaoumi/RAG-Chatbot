@@ -85,7 +85,7 @@ def renumber_markers(answer, snippets, citations):
     return re.sub(CITATION_PATTERN, replace, answer)
 
 def build_response(answer, snippets):
-    """Turn the raw LLM reply into the /chat response shape from docs/contracts.md."""
+    """Turn the raw LLM reply into the /chat response shape from docs/architecture/contracts.md."""
     citations = extract_citations(answer, snippets)
 
     if not citations:

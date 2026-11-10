@@ -57,7 +57,7 @@ flowchart LR
     class CHAT,DB changed
 ```
 
-Orange = new (auth, flow C). Yellow border = changed (chat, DB). Blue (A) and green (B) are the flows from `docs/architecture-event-flow.md`, renumbered to include the Tier 2 cache steps (A2, A7; see `docs/design-tier2-rate-limit-cache.md`), with the pipeline services collapsed into one box. There is no chat → auth arrow, because chat verifies the JWT with auth's public key.
+Orange = new (auth, flow C). Yellow border = changed (chat, DB). Blue (A) and green (B) are the flows from `docs/architecture/architecture-event-flow.md`, renumbered to include the Tier 2 cache steps (A2, A7; see `docs/features/design-tier2-rate-limit-cache.md`), with the pipeline services collapsed into one box. There is no chat → auth arrow, because chat verifies the JWT with auth's public key.
 
 ## C. Interfaces
 

@@ -18,7 +18,7 @@ Event-driven microservices. Services talk by REST (synchronous) and by RabbitMQ 
 Two flows:
 
 - **Flow B, load documents:** scrape MARP index page, download PDFs, extract text, chunk, embed, store in pgvector.
-- **Flow A, answer a question:** embed question, semantic cache lookup, vector search, LLM prompt, answer with citations.
+- **Flow A, answer a question:** embed question, vector search, LLM prompt, answer with citations.
 
 ```mermaid
 flowchart LR
@@ -36,12 +36,11 @@ flowchart LR
 
     %% A: answering a question
     UI <-->|"A1: GET / page, POST /chat returns answer + citations"| CHAT
-    CHAT <-->|"A2: semantic cache lookup, A7: save answer"| DB
-    CHAT <-->|"A3: GET /search returns top-k chunks"| RET
-    RET <-->|"A4: read nearest chunks"| DB
-    RET -.->|"A5: RetrievalCompleted"| MQ
-    CHAT <-->|"A6: prompt returns generated answer"| LLM
-    CHAT -.->|"A8: AnswerGenerated"| MQ
+    CHAT <-->|"A2: GET /search returns top-k chunks"| RET
+    RET <-->|"A3: read nearest chunks"| DB
+    RET -.->|"A4: RetrievalCompleted"| MQ
+    CHAT <-->|"A5: prompt returns generated answer"| LLM
+    CHAT -.->|"A6: AnswerGenerated"| MQ
 
     %% B: loading documents
     OP -->|"B1: POST /discover"| ING
@@ -57,8 +56,8 @@ flowchart LR
     IDX -->|"B10: write chunks + embeddings"| DB
     IDX -.->|"B11: ChunksIndexed"| MQ
 
-    linkStyle 0,1,2,3,4,5,6 stroke:#2563eb,stroke-width:2px
-    linkStyle 7,8,9,10,11,12,13,14,15,16,17,18 stroke:#16a34a,stroke-width:2px
+    linkStyle 0,1,2,3,4,5 stroke:#2563eb,stroke-width:2px
+    linkStyle 6,7,8,9,10,11,12,13,14,15,16,17 stroke:#16a34a,stroke-width:2px
 ```
 
 **Legend**
@@ -74,24 +73,22 @@ flowchart LR
 2. **B2** Ingestion downloads the MARP index page and collects every PDF link on it. This is the "discover" step; links are not hardcoded, so new or renamed PDFs are found automatically.
 3. **B3** Ingestion checks `discovered_documents` and keeps only new URLs, so each PDF is processed once.
 4. **B4** For each new URL, ingestion publishes `DocumentDiscovered`. RabbitMQ delivers it back to ingestion's downloader (queue `ingestion.fetch`). Splitting finding from downloading means `POST /discover` returns quickly, and an interrupted download is not lost because the event stays in the queue.
-5. **B5** The downloader fetches the PDF from MARP, waiting at least 5 seconds between requests (`robots.txt` crawl delay).
+5. **B5** The downloader fetches the PDF from MARP, waiting 5 seconds between requests (`robots.txt` crawl delay).
 6. **B6** Ingestion writes the PDF to the shared `pdfs` volume as `/data/pdfs/{doc_id}.pdf`.
 7. **B7** Ingestion publishes `DocumentFetched` with the file path. RabbitMQ delivers it to extraction (queue `extraction.documents`). The PDF itself never travels through RabbitMQ.
 8. **B8** Extraction reads the PDF, extracts the text page by page, and saves it in `documents`.
 9. **B9** Extraction publishes `DocumentExtracted` with the page texts. RabbitMQ delivers it to indexing (queue `indexing.documents`).
-10. **B10** Indexing splits each page into ~200-token chunks with 40-token overlap, embeds them with `all-MiniLM-L6-v2` (384 dimensions), and writes them to `chunks`.
+10. **B10** Indexing splits each page into ~200-token chunks with 40-token overlap, embeds them with `BAAI/bge-small-en-v1.5` (384 dimensions, normalised), and writes them to `chunks`.
 11. **B11** Indexing publishes `ChunksIndexed`.
 
 ### Flow A — answering a question
 
-1. **A1** *(web UI planned; today clients call `POST /chat` directly)* The browser loads the web UI from chat (`GET /`) and sends the user's question (`POST /chat`).
-2. **A2** *(planned, not yet implemented)* Chat embeds the question and looks for a similar, unexpired question in `semantic_cache`. On a cache hit it skips to A8.
-3. **A3** On a cache miss, chat calls retrieval `GET /search` with the question and an `X-Correlation-ID` header.
-4. **A4** Retrieval embeds the question with the same model as indexing and returns the top-k nearest chunks by cosine similarity, each with title, page and URL.
-5. **A5** Retrieval publishes `RetrievalCompleted`.
-6. **A6** Chat builds a prompt from the question and the retrieved chunks and sends it to the OpenRouter LLM. If no chunk supports an answer, chat returns the fallback "I'm not certain based on the available documents."
-7. **A7** *(planned, not yet implemented)* Chat saves the answer and citations in `semantic_cache` for `CACHE_TTL_SECONDS` (default 24 hours).
-8. **A8** Chat publishes `AnswerGenerated`, then returns the answer and citations (title, page, link) to the browser over the A1 connection.
+1. **A1** The browser loads the web UI from chat (`GET /`) and sends the user's question (`POST /chat`).
+2. **A2** Chat calls retrieval `GET /search` with the question and an `X-Correlation-ID` header.
+3. **A3** Retrieval embeds the question with the same model as indexing and returns the top-k nearest chunks by cosine similarity (chat asks for `k=8`), each with title, page and URL.
+4. **A4** Retrieval publishes `RetrievalCompleted`.
+5. **A5** If the best chunk scores below `SCORE_THRESHOLD` (default `0.6`), chat skips the LLM and returns the fallback `not certain / no source found` with no citations. Otherwise it builds a numbered prompt from the question and the chunks and sends it to the OpenRouter LLM. An answer that cites no valid source also becomes the fallback.
+6. **A6** Chat publishes `AnswerGenerated`, then returns the answer and citations (title, page, link) to the browser over the A1 connection.
 
 ### Services
 
@@ -101,13 +98,17 @@ flowchart LR
 | extraction | 8005 | Extract per-page text from PDFs                             | running                    |
 | indexing   | 8002 | Chunk (~200 tokens, 40 overlap), embed, store               | running                    |
 | retrieval  | 8003 | Vector search over pgvector                                 | running                    |
-| chat       | 8004 | Semantic cache, prompt + LLM, citations, serves web UI      | running (cache and UI planned) |
+| chat       | 8004 | Prompt + LLM, citations, serves web UI                      | running                    |
 | postgres   | 5432 | Postgres 16 + pgvector                                      | running                    |
 | rabbitmq   | 5672 / 15672 | AMQP broker / management UI                         | running                    |
 
-Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval), `semantic_cache` (chat, planned). `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet; RabbitMQ drops them until one binds a queue.
+Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval). `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet; RabbitMQ drops them until one binds a queue.
 
-Per-service details: [`docs/services/`](docs/services/). Planned auth and session design: [`docs/design-tier1-auth-sessions.md`](docs/design-tier1-auth-sessions.md).
+Per-service details: [`docs/services/`](docs/services/).
+
+Feature designs for Sprint 2: Tier 1 auth and sessions ([`docs/design-tier1-auth-sessions.md`](docs/design-tier1-auth-sessions.md)), Tier 2 rate limiting and caching ([`docs/design-tier2-rate-limit-cache.pdf`](docs/design-tier2-rate-limit-cache.pdf)).
+
+Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum-artefacts.md`](docs/scrum-artefacts.md).
 
 ## Technology Stack
 
@@ -121,8 +122,8 @@ Per-service details: [`docs/services/`](docs/services/). Planned auth and sessio
 | PDF extraction  | `pdfplumber`                                                   |
 | Scraping / HTTP | `httpx`, `beautifulsoup4`                                      |
 | Chunking        | `tiktoken`                                                     |
-| Embeddings      | `all-MiniLM-L6-v2` (local, shared by indexing, retrieval, chat) |
-| LLM             | OpenRouter (model set by `OPENROUTER_MODEL`)                   |
+| Embeddings      | `BAAI/bge-small-en-v1.5` via `sentence-transformers` (local, CPU, shared by indexing and retrieval) |
+| LLM             | OpenRouter (model set by `OPENROUTER_MODEL`, default `nvidia/nemotron-3.5-super-vl:free`) |
 | Packaging       | Docker, Docker Compose                                         |
 | Testing / CI    | pytest, GitHub Actions (tests + `docker compose build`)        |
 
@@ -143,7 +144,7 @@ cd RAG-Chatbot-
 cp .env.example .env
 ```
 
-Defaults in `.env.example` work for the pipeline. Set `OPENROUTER_API_KEY` for chat; `OPENROUTER_MODEL` is not chosen yet.
+Defaults in `.env.example` work for the pipeline. Set `OPENROUTER_API_KEY` for chat. `OPENROUTER_MODEL` defaults to `nvidia/nemotron-3.5-super-vl:free`, and `SCORE_THRESHOLD` (minimum retrieval score before the LLM is called) to `0.6`.
 
 ### Running
 
@@ -171,7 +172,7 @@ curl -X POST localhost:8001/discover
 
 Ingestion finds PDF links on the MARP page and downloads them one every 5 seconds (site `robots.txt` crawl delay). Extraction, indexing and the rest of the pipeline pick each file up automatically. Watch progress with `docker compose logs -f ingestion extraction indexing`.
 
-Ask a question:
+Ask a question in the web UI at http://localhost:8004, or with curl:
 
 ```bash
 curl -X POST localhost:8004/chat -H 'Content-Type: application/json' \

@@ -80,7 +80,7 @@ flowchart LR
 - `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet. They are published with `mandatory=False`, so RabbitMQ drops them until a consumer binds a queue. A consumer (for example logging or a monitoring dashboard) can be added later without changing the publishers.
 - Every event uses the envelope in `docs/events/event-catalogue.md`. One `correlationId` follows each document through flow B and each question through flow A.
 - Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval). Chat has no database access yet.
-- A semantic cache in chat is planned for Sprint 2 (Tier 2, see [`design-tier2-rate-limit-cache.pdf`](design-tier2-rate-limit-cache.pdf)). It is not part of this diagram.
+- A semantic cache in chat is planned for Sprint 2 (Tier 2, see [`design-tier2-rate-limit-cache.md`](design-tier2-rate-limit-cache.md)). It is not part of this diagram.
 - The web UI is a static page served by chat, not a separate service.
 - There are five core services: ingestion, extraction, indexing, retrieval and chat.
 

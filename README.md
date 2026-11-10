@@ -106,7 +106,7 @@ Each table has one owning service: `discovered_documents` (ingestion), `document
 
 Per-service details: [`docs/services/`](docs/services/).
 
-Feature designs for Sprint 2: Tier 1 auth and sessions ([`docs/design-tier1-auth-sessions.md`](docs/design-tier1-auth-sessions.md)), Tier 2 rate limiting and caching ([`docs/design-tier2-rate-limit-cache.pdf`](docs/design-tier2-rate-limit-cache.pdf)).
+Feature designs for Sprint 2: Tier 1 auth and sessions ([`docs/design-tier1-auth-sessions.md`](docs/design-tier1-auth-sessions.md)), Tier 2 rate limiting and caching ([`docs/design-tier2-rate-limit-cache.md`](docs/design-tier2-rate-limit-cache.md)).
 
 Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum-artefacts.md`](docs/scrum-artefacts.md).
 

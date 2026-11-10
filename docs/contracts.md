@@ -232,4 +232,4 @@ Retrieval reads this table, read-only.
 
 ### Planned for Sprint 2
 
-Tier 1 adds auth and session tables (`users`, `refresh_tokens`, `conversations`, `messages`), and Tier 2 adds a semantic cache owned by chat. Neither exists yet. See [`design-tier1-auth-sessions.md`](design-tier1-auth-sessions.md) and [`design-tier2-rate-limit-cache.pdf`](design-tier2-rate-limit-cache.pdf). This file is updated when they are built.
+Tier 1 adds auth and session tables (`users`, `refresh_tokens`, `conversations`, `messages`), and Tier 2 adds a semantic cache owned by chat. Neither exists yet. See [`design-tier1-auth-sessions.md`](design-tier1-auth-sessions.md) and [`design-tier2-rate-limit-cache.md`](design-tier2-rate-limit-cache.md). This file is updated when they are built.

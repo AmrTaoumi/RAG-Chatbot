@@ -110,7 +110,7 @@ These are refined and turned into issues at Sprint 2 planning (week 6). Rows 1�
 | T1-7 | Publish `UserLoggedIn` / `UserLoggedOut` | Tier 1 | Tier 1 §E | 0.5d | Amr |
 | T1-8 | Web UI: login form, token handling, history view | Tier 1 | Tier 1 §E | 2d | Walid |
 | T1-9 | Tier 1 tests, update `contracts.md` and the architecture diagram | Tier 1 | Tier 1 §E | 1.5d | Layla |
-| T2-1 | Chat DB connection, create tables, env vars, load bge-small in chat | Tier 2 | [Tier 2 design §E](design-tier2-rate-limit-cache.pdf) | 0.5d | Amr |
+| T2-1 | Chat DB connection, create tables, env vars, load bge-small in chat | Tier 2 | [Tier 2 design §E](design-tier2-rate-limit-cache.md) | 0.5d | Amr |
 | T2-2 | Per-user limit (429) and global LLM budget (503), counting retries | Tier 2 | Tier 2 §E | 2d | Walid |
 | T2-3 | Semantic cache: lookup, save, `cached` field | Tier 2 | Tier 2 §E | 1.5d | Layla |
 | T2-4 | `ChunksIndexed` consumer clears the cache; update the event catalogue | Tier 2 | Tier 2 §E | 1d | Amr |

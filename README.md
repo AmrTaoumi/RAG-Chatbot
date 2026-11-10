@@ -131,10 +131,13 @@ Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum
 
 ### Prerequisites
 
-- Docker with Compose v2
+- Docker with Compose v2 (Docker Desktop on Windows)
 - Git
+- Internet access and about 6 GB free disk (the first build downloads PyTorch and the embedding model)
 - Free ports: 5432, 5672, 15672, 8001, 8002, 8003, 8004, 8005
 - (Python 3.12 only if you run tests outside Docker)
+
+On Windows, run the commands below in Git Bash or WSL.
 
 ### Installation
 
@@ -144,15 +147,15 @@ cd RAG-Chatbot-
 cp .env.example .env
 ```
 
-Defaults in `.env.example` work for the pipeline. Set `OPENROUTER_API_KEY` for chat. `OPENROUTER_MODEL` defaults to `nvidia/nemotron-3.5-super-vl:free`, and `SCORE_THRESHOLD` (minimum retrieval score before the LLM is called) to `0.6`.
+Defaults in `.env.example` work for the pipeline. For chat, set `OPENROUTER_API_KEY` in `.env` (free key at https://openrouter.ai/keys). `OPENROUTER_MODEL` defaults to `nvidia/nemotron-3.5-super-vl:free`, and `SCORE_THRESHOLD` (minimum retrieval score before the LLM is called) to `0.6`.
 
 ### Running
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-Wait until postgres and rabbitmq report healthy. Then check:
+The first build takes several minutes. After start-up, give indexing and retrieval up to a minute to load the embedding model. Then check:
 
 ```bash
 curl localhost:8001/health      # ingestion  -> {"status":"ok"}
@@ -162,7 +165,7 @@ curl localhost:8004/health      # chat       -> {"status":"ok"}
 curl localhost:8005/health      # extraction -> {"status":"ok"}
 ```
 
-RabbitMQ UI: http://localhost:15672 (login from `.env`, default `guest` / `guest`).
+Optional: watch queues and events in the RabbitMQ UI at http://localhost:15672 (login from `.env`, default `guest` / `guest`).
 
 Load documents:
 

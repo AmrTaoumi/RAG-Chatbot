@@ -5,6 +5,9 @@ import sys
 import uuid
 from datetime import datetime, timezone
 
+from pathlib import Path
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 import httpx
 import pika
 from fastapi import FastAPI, HTTPException
@@ -23,12 +26,17 @@ logging.getLogger("pika").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 RETRIEVAL_URL = os.environ.get("RETRIEVAL_URL") or "http://retrieval:8000"
-TOP_K = 5
+TOP_K = 8
 EXCHANGE = "rag.topic"
 ROUTING_KEY = "answer.generated"
 
+STATIC_DIR = Path(__file__).parent / "static"
+
+SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.6" )
+
 app = FastAPI()
 
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1)   # empty question FastAPI returns 422 
@@ -57,7 +65,7 @@ def publish_answer_generated(question, result, correlation_id):
             "citations": result["citations"],
         },
     }
-    # the answer matters more than the event, so a broker problem is logged, not raised
+    # the answer matters more than the event so a broker problem is logged, not raised
     try:
         connection = pika.BlockingConnection(pika.URLParameters(os.environ["RABBITMQ_URL"]))
         try:
@@ -79,6 +87,9 @@ def publish_answer_generated(question, result, correlation_id):
 def health():
     return {"status": "ok"}
 
+@app.get("/")
+def index():
+    return FileResponse(STATIC_DIR / "index.html")
 
 @app.post("/chat")
 def chat(request: ChatRequest):
@@ -91,8 +102,13 @@ def chat(request: ChatRequest):
         logger.error("retrieval failed correlationId=%s error=%s", correlation_id, e)
         raise HTTPException(status_code=503, detail="retrieval unavailable")
 
-    if not snippets:
-        result = {"answer": FALLBACK_ANSWER, "citations": []}
+    if not snippets or snippets[0]["score"] < SCORE_THRESHOLD:
+        top_score = snippets[0]["score"] if snippets else None
+        logger.info(
+            "skipping LLM correlationId=%s top_score=%s threshold=%s",
+            correlation_id, top_score, SCORE_THRESHOLD,
+        )
+        result = {"answer": FALLBACK_ANSWER, "citations": []}        
     else:
         messages = build_messages(request.question, snippets)
         try:

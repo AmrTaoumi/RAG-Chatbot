@@ -81,3 +81,20 @@ def test_build_response_falls_back_when_answer_has_no_citations():
 
 def test_build_response_falls_back_on_fallback_reply():
     assert build_response(FALLBACK_ANSWER, FAKE_SNIPPETS) == FALLBACK_RESPONSE
+
+def test_build_response_renumbers_markers_to_match_sources():
+    response = build_response("Report it [3]. Zero marks [1].", FAKE_SNIPPETS)
+
+    assert response == {
+        "answer": "Report it [1]. Zero marks [2].",
+        "citations": [GENERAL_PAGE_5, UG_PAGE_12],
+    }
+
+
+def test_build_response_same_page_markers_share_a_number():
+    response = build_response("Zero marks [1]. One resit [2].", FAKE_SNIPPETS)
+
+    assert response == {
+        "answer": "Zero marks [1]. One resit [1].",
+        "citations": [UG_PAGE_12],
+    }

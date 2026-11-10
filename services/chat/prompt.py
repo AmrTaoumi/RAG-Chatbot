@@ -3,7 +3,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-FALLBACK_ANSWER = "I'm not certain based on the available documents."
+FALLBACK_ANSWER = "not certain / no source found"
 
 SYSTEM_PROMPT = (
     "Answer ONLY using the numbered context provided. "

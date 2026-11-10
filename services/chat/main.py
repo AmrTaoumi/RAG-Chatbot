@@ -32,7 +32,7 @@ ROUTING_KEY = "answer.generated"
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.35" )
+SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.6" )
 
 app = FastAPI()
 

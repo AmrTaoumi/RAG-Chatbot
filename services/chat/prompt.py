@@ -3,7 +3,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-FALLBACK_ANSWER = "I'm not certain based on the available documents."
+FALLBACK_ANSWER = "not certain / no source found"
 
 SYSTEM_PROMPT = (
     "Answer ONLY using the numbered context provided. "
@@ -65,18 +65,24 @@ def extract_citations(answer, snippets):
     return citations
 
 
-def remove_invalid_markers(answer, snippet_count):
+def renumber_markers(answer, snippets, citations):
+    position = {}
+    for number, citation in enumerate(citations, start=1):
+        key = (citation["title"], citation["url"], citation["page"])
+        position[key] = number
 
-    def keep_or_remove(match):
-        n = int(match.group(1))   
+    
+    def replace(match):
+        n = int(match.group(1))
 
-        if 1 <= n <= snippet_count:
-            return match.group(0)
+        if not 1 <= n <= len(snippets):
+            return ""                          
 
-        return ""
+        snippet = snippets[n - 1]
+        key = (snippet["title"], snippet["url"], snippet["page"])
+        return f"[{position[key]}]"
 
-    return re.sub(CITATION_PATTERN, keep_or_remove, answer)
-
+    return re.sub(CITATION_PATTERN, replace, answer)
 
 def build_response(answer, snippets):
     """Turn the raw LLM reply into the /chat response shape from docs/contracts.md."""
@@ -85,7 +91,7 @@ def build_response(answer, snippets):
     if not citations:
         return {"answer": FALLBACK_ANSWER, "citations":[]}
 
-    cleaned = remove_invalid_markers(answer, len(snippets))
+    cleaned = renumber_markers(answer, snippets, citations)
     return {"answer": cleaned, "citations": citations}
 
 

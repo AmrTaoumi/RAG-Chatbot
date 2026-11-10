@@ -1,6 +1,6 @@
 # Event Catalogue
 
-**Status:** Draft, pending approval from all three members.
+**Status:** Agreed at the contract workshop (S1-02, 20 Oct 2026); approved by all three members at the Sprint 1 freeze (10 Nov 2026).
 
 All events published on RabbitMQ. REST endpoints, database tables and shared conventions are in `docs/contracts.md`. The event flow diagram is in `docs/architecture-event-flow.md`.
 
@@ -18,11 +18,11 @@ Exchange: `rag.topic` (topic exchange, durable). All events are JSON with the en
 | AnswerGenerated     | `answer.generated`    | none yet              | none yet            |
 
 Rules:
-- Queues are durable. Both the consuming service and the publishing service declare the queue and binding on startup, using the names in the routing table (declaring is idempotent). This way an event published before its consumer has started is kept, not lost.
+- Queues are durable. Both the consuming service and the publishing service declare the queue and binding before they use it, using the names in the routing table (declaring is idempotent). Consumers do this on startup; ingestion's discovery does it just before publishing. This way an event published before its consumer has started is kept, not lost.
 - Events with a consumer are published with `mandatory=True` and publisher confirms, so an unroutable message raises an error.
 - `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer and no queue yet. They are published with `mandatory=False`, so RabbitMQ drops them without an error until a consumer binds a queue.
 - Messages are persistent (`delivery_mode=2`) with `content_type: application/json`.
-- Consumers ack manually, after processing succeeds.
+- Consumers ack manually, after processing succeeds. A message that can never be processed (for example invalid JSON, missing fields, or a PDF with no text) is logged and acked, so it is discarded instead of blocking the queue. Other errors (for example database or broker down, or the MARP site timing out or answering 429/5xx) leave it unacked, so it is redelivered.
 - Delivery is at-least-once, so every consumer must be idempotent (key: `payload.doc_id`, or `payload.url` for `DocumentDiscovered`).
 
 ## Envelope
@@ -50,7 +50,7 @@ Every event has the same envelope. Event-specific fields go in `payload`.
 `correlationId` rules:
 - **Document flow:** ingestion creates one per document in `DocumentDiscovered`. `DocumentFetched`, `DocumentExtracted` and `ChunksIndexed` copy it.
 - **Chat flow:** chat creates one per `POST /chat`. It sends it to retrieval in the `X-Correlation-ID` request header, and retrieval uses it in `RetrievalCompleted`. If the header is missing, retrieval creates one. `AnswerGenerated` uses the same ID.
-- Services include the `correlationId` in their log lines.
+- Services include the `correlationId` in their log lines, except retrieval, which logs only errors and leaves it out.
 
 ## DocumentDiscovered
 Triggered by: ingestion  
@@ -98,6 +98,8 @@ The PDF is not carried in the event. It is written to the shared `pdfs` volume a
 Triggered by: extraction  
 Consumed by: indexing  
 Purpose: Hand the per-page text of a document to indexing for chunking and embedding.
+
+`page_count` is the PDF's real length. Contents pages and pages with no text after cleanup are left out of `pages`, so `pages` can be shorter. Page numbers stay as in the PDF, so there can be gaps.
 
 ```json
 {
@@ -155,7 +157,7 @@ Purpose: Record which chunks were returned for a query, for later analysis.
   "correlationId": "b2a1c3d4-8e5f-4a6b-9c7d-0e1f2a3b4c5d",
   "payload": {
     "query": "what is the late submission penalty?",
-    "k": 5,
+    "k": 8,
     "results": [
       {
         "chunk_id": "9e107d9d372bb6826bd81d3542a419d6-p3-c0",

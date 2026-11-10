@@ -2,7 +2,7 @@
 See docs/chunks.md for the full justification
 
 - page boundaries: every chunk has exactly one page number, so citations point to the right page.
-- 200 tokens: all-MiniLM-L6-v2 only reads 256 tokens, so 200 leaves a margin. tiktoken counts slightly differently from MiniLM's own tokenizer.
+- 200 tokens: bge-small-en-v1.5 reads up to 512 of its own tokens; 200 tiktoken tokens are ~311 of them, so chunks are never cut off.
 - 40 token overlap : a sentence cut at a chunk boundary still appears whole in one of the chunks.
 - tiktoken: real token counts instead of guessing from words, and it's on the permitted list.
 '''

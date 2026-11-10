@@ -21,12 +21,11 @@ flowchart LR
 
     %% A: answering a question
     UI <-->|"A1: GET / page, POST /chat returns answer + citations"| CHAT
-    CHAT <-->|"A2: semantic cache lookup, A7: save answer"| DB
-    CHAT <-->|"A3: GET /search returns top-k chunks"| RET
-    RET <-->|"A4: read nearest chunks"| DB
-    RET -.->|"A5: RetrievalCompleted"| MQ
-    CHAT <-->|"A6: prompt returns generated answer"| LLM
-    CHAT -.->|"A8: AnswerGenerated"| MQ
+    CHAT <-->|"A2: GET /search returns top-k chunks"| RET
+    RET <-->|"A3: read nearest chunks"| DB
+    RET -.->|"A4: RetrievalCompleted"| MQ
+    CHAT <-->|"A5: prompt returns generated answer"| LLM
+    CHAT -.->|"A6: AnswerGenerated"| MQ
 
     %% B: loading documents
     OP -->|"B1: POST /discover"| ING
@@ -42,8 +41,8 @@ flowchart LR
     IDX -->|"B10: write chunks + embeddings"| DB
     IDX -.->|"B11: ChunksIndexed"| MQ
 
-    linkStyle 0,1,2,3,4,5,6 stroke:#2563eb,stroke-width:2px
-    linkStyle 7,8,9,10,11,12,13,14,15,16,17,18 stroke:#16a34a,stroke-width:2px
+    linkStyle 0,1,2,3,4,5 stroke:#2563eb,stroke-width:2px
+    linkStyle 6,7,8,9,10,11,12,13,14,15,16,17 stroke:#16a34a,stroke-width:2px
 ```
 
 ## Legend
@@ -59,30 +58,29 @@ flowchart LR
 2. **B2** Ingestion downloads the MARP index page and collects every PDF link on it. This is the "discover" step; links are not hardcoded, so new or renamed PDFs are found automatically.
 3. **B3** Ingestion checks `discovered_documents` and keeps only new URLs, so each PDF is processed once.
 4. **B4** For each new URL, ingestion publishes `DocumentDiscovered`. RabbitMQ delivers it back to ingestion's downloader (queue `ingestion.fetch`). Splitting finding from downloading means `POST /discover` returns quickly, and an interrupted download is not lost because the event stays in the queue.
-5. **B5** The downloader fetches the PDF from MARP, waiting at least 5 seconds between requests (`robots.txt` crawl delay).
+5. **B5** The downloader fetches the PDF from MARP, waiting 5 seconds between requests (`robots.txt` crawl delay).
 6. **B6** Ingestion writes the PDF to the shared `pdfs` volume as `/data/pdfs/{doc_id}.pdf`.
 7. **B7** Ingestion publishes `DocumentFetched` with the file path. RabbitMQ delivers it to extraction (queue `extraction.documents`). The PDF itself never travels through RabbitMQ.
 8. **B8** Extraction reads the PDF, extracts the text page by page, and saves it in `documents`.
 9. **B9** Extraction publishes `DocumentExtracted` with the page texts. RabbitMQ delivers it to indexing (queue `indexing.documents`).
-10. **B10** Indexing splits each page into ~200-token chunks with 40-token overlap, embeds them with `all-MiniLM-L6-v2` (384 dimensions), and writes them to `chunks`.
+10. **B10** Indexing splits each page into ~200-token chunks with 40-token overlap, embeds them with `BAAI/bge-small-en-v1.5` (384 dimensions, normalised), and writes them to `chunks`.
 11. **B11** Indexing publishes `ChunksIndexed`.
 
 ## Flow A — answering a question
 
 1. **A1** The browser loads the web UI from chat (`GET /`) and sends the user's question (`POST /chat`).
-2. **A2** Chat embeds the question and looks for a similar, unexpired question in `semantic_cache`. On a cache hit it skips to A8.
-3. **A3** On a cache miss, chat calls retrieval `GET /search` with the question and an `X-Correlation-ID` header.
-4. **A4** Retrieval embeds the question with the same model as indexing and returns the top-k nearest chunks by cosine similarity, each with title, page and URL.
-5. **A5** Retrieval publishes `RetrievalCompleted`.
-6. **A6** Chat builds a prompt from the question and the retrieved chunks and sends it to the OpenRouter LLM. If no chunk supports an answer, chat returns the fallback "I'm not certain based on the available documents."
-7. **A7** Chat saves the answer and citations in `semantic_cache` for `CACHE_TTL_SECONDS` (default 24 hours).
-8. **A8** Chat publishes `AnswerGenerated`, then returns the answer and citations (title, page, link) to the browser over the A1 connection.
+2. **A2** Chat calls retrieval `GET /search` with the question and an `X-Correlation-ID` header.
+3. **A3** Retrieval embeds the question with the same model as indexing and returns the top-k nearest chunks by cosine similarity (chat asks for `k=8`), each with title, page and URL.
+4. **A4** Retrieval publishes `RetrievalCompleted`.
+5. **A5** If the best chunk scores below `SCORE_THRESHOLD` (default `0.6`), chat skips the LLM and returns the fallback `not certain / no source found` with no citations. Otherwise it builds a numbered prompt from the question and the chunks and sends it to the OpenRouter LLM. An answer that cites no valid source also becomes the fallback.
+6. **A6** Chat publishes `AnswerGenerated`, then returns the answer and citations (title, page, link) to the browser over the A1 connection.
 
 ## Notes
 
 - `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet. They are published with `mandatory=False`, so RabbitMQ drops them until a consumer binds a queue. A consumer (for example logging or a monitoring dashboard) can be added later without changing the publishers.
 - Every event uses the envelope in `docs/events/event-catalogue.md`. One `correlationId` follows each document through flow B and each question through flow A.
-- Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval), `semantic_cache` (chat).
+- Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval). Chat has no database access yet.
+- A semantic cache in chat is planned for Sprint 2 (Tier 2, see [`design-tier2-rate-limit-cache.md`](design-tier2-rate-limit-cache.md)). It is not part of this diagram.
 - The web UI is a static page served by chat, not a separate service.
 - There are five core services: ingestion, extraction, indexing, retrieval and chat.
 

@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from pathlib import Path
@@ -10,9 +11,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import pika
+import psycopg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+import store
 from client import ask
 from prompt import FALLBACK_ANSWER, build_messages, build_response
 
@@ -34,7 +37,16 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.6" )
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app):
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as conn:
+        store.ensure_tables(conn)
+    logger.info("chat tables ready")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

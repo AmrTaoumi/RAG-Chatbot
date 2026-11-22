@@ -1,9 +1,13 @@
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 
+import psycopg
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+import store
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -25,7 +29,16 @@ def parse_origins(raw: str | None) -> list[str]:
 ALLOWED_ORIGINS = parse_origins(os.getenv("CORS_ALLOWED_ORIGINS"))
 logger.info(f"CORS allowed origins: {ALLOWED_ORIGINS}")
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app):
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as conn:
+        store.ensure_tables(conn)
+    logger.info("auth tables ready")
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

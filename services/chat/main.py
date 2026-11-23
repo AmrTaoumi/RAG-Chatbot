@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 import httpx
 import pika
 import psycopg
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -37,9 +39,29 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 SCORE_THRESHOLD = float( os.environ.get("SCORE_THRESHOLD") or "0.6" )
 
+MIN_KEY_BITS = 2048
+
+def load_public_key(path: str | None) -> rsa.RSAPublicKey:
+    if not path:
+        raise RuntimeError("JWT_PUBLIC_KEY_PATH is not set")
+    try:
+        with open(path, "rb") as f:
+            key = serialization.load_pem_public_key(f.read())
+    except OSError as e:
+        raise RuntimeError(f"cannot read JWT public key at {path}: {e.strerror}") from e
+    except ValueError as e:
+        raise RuntimeError(f"JWT public key at {path} is not a valid PEM public key") from e
+    if not isinstance(key, rsa.RSAPublicKey):
+        raise RuntimeError(f"JWT public key at {path} is not an RSA key")
+    if key.key_size < MIN_KEY_BITS:
+        raise RuntimeError(f"JWT public key at {path} must be at least {MIN_KEY_BITS} bits")
+    return key
+
 
 @asynccontextmanager
 async def lifespan(app):
+    app.state.public_key = load_public_key(os.getenv("JWT_PUBLIC_KEY_PATH"))
+    logger.info("JWT public key loaded")
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10) as conn:
         store.ensure_tables(conn)
     logger.info("chat tables ready")

@@ -48,9 +48,13 @@ def test_startup_creates_tables(monkeypatch):
     monkeypatch.setattr(main.psycopg, "connect", connect)
     calls = []
     monkeypatch.setattr(main.store, "ensure_tables", calls.append)
+    key = object()
+    monkeypatch.setattr(main, "load_public_key", lambda path: key)
 
     with TestClient(main.app):
         pass
+
+    assert main.app.state.public_key is key
 
     assert connect.call_args.args == ("postgresql://test",)
     assert calls == [connect.return_value.__enter__.return_value]

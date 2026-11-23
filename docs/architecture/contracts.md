@@ -2,6 +2,8 @@
 
 **Status:** Agreed at the contract workshop (S1-02, 20 Oct 2026); approved by all three members at the Sprint 1 freeze (10 Nov 2026).
 
+Update 1: Changes added in Sprint 2 with the auth service, the JWT keys and the Tier 1 tables. 23rd of November, 2026.
+
 See `docs/architecture/architecture-event-flow.md` for the diagram, `docs/events/event-catalogue.md` for the events and `docs/services/` for one description per service.
 
 ---
@@ -15,6 +17,7 @@ See `docs/architecture/architecture-event-flow.md` for the diagram, `docs/events
 | retrieval  | 8003  | Vector search over pgvector                           |
 | chat       | 8004  | Score threshold, prompt + LLM, return answer + citations, serves the web UI |
 | extraction | 8005  | Extract per-page text from fetched PDFs               |
+| auth       | 8006  | Accounts and JWT issuing (Tier 1, only `GET /health` so far) |
 | postgres   | 5432  | pgvector store                                        |
 | rabbitmq   | 5672  | AMQP broker                                           |
 | rabbitmq   | 15672 | Management UI                                         |
@@ -165,6 +168,14 @@ Errors:
 
 ---
 
+### Auth (`localhost:8006`)
+
+Only `GET /health` so far. Register, login, refresh and logout come with T1-3 and T1-4.
+
+CORS: auth accepts browser calls only from the origins in `CORS_ALLOWED_ORIGINS` (the chat UI, `http://localhost:8004`), with credentials, methods `GET` and `POST`, and the `Authorization` and `Content-Type` headers. Other origins get no `Access-Control-Allow-Origin`, so the browser blocks them.
+
+---
+
 ## Shared Conventions
 
 - Embedding model: `BAAI/bge-small-en-v1.5` (384 dimensions, normalised), loaded locally by indexing (chunks) and retrieval (the `q` param). Both must use the same model. Retrieval adds the query prefix `Represent this sentence for searching relevant passages: ` before embedding `q`; chunks are embedded without it.
@@ -173,6 +184,7 @@ Errors:
 - `chunk_id`: `{doc_id}-p{page}-c{index}`
 - Content-Type: `application/json` on all endpoints, except `GET /` (`text/html`) and the UI files under `/static/` on chat
 - Fetched PDFs: shared Docker volume `pdfs`, mounted at `/data/pdfs` (read-write in ingestion, read-only in extraction), file name `{doc_id}.pdf`
+- JWT keys: one RS256 key pair. Auth gets the private key and chat only the public key, both as Docker secrets under `/run/secrets/`. Created with `./scripts/gen-keys.sh`, never committed.
 
 ---
 
@@ -187,14 +199,18 @@ Errors:
 | `MARP_URL`           | ingestion  | MARP index page to scrape                          |
 | `USER_AGENT`         | ingestion  | Sent on every request to the MARP site and checked against `robots.txt` |
 | `PDF_DIR`            | ingestion, extraction | Default `/data/pdfs` (the `pdfs` volume) |
-| `DATABASE_URL`       | ingestion, extraction, indexing, retrieval | Built by compose from `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` |
-| `RABBITMQ_URL`       | all five services | Built by compose from `RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS` |
+| `CORS_ALLOWED_ORIGINS` | auth     | Comma-separated origins allowed to call auth from the browser, `*` is not allowed. Auth won't start without it |
+| `JWT_PRIVATE_KEY_PATH` | auth     | Set by compose to `/run/secrets/jwt_private_key`. Auth won't start without a valid RSA key (2048 bits or more) |
+| `JWT_PUBLIC_KEY_PATH`  | chat     | Set by compose to `/run/secrets/jwt_public_key`. Chat won't start without a valid RSA key (2048 bits or more) |
+| `JWT_PRIVATE_KEY_FILE`, `JWT_PUBLIC_KEY_FILE` | compose, `scripts/gen-keys.sh` | Key files on the host, default `./keys/jwt_private.pem` and `./keys/jwt_public.pem`. Never committed. The script reads them from the shell, not `.env` |
+| `DATABASE_URL`       | ingestion, extraction, indexing, retrieval, chat, auth | Built by compose from `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` |
+| `RABBITMQ_URL`       | all six services | Built by compose from `RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS`. Auth doesn't publish anything yet |
 
 ---
 
 ## Database Schema
 
-Each table has one owning service. Other services must not write to it. `chunks` is created by `db/init/001_chunks.sql`, which also enables the pgvector extension. The other tables are created by their owner with `CREATE TABLE IF NOT EXISTS`: `documents` by extraction when its consumer starts (or on the first `GET /documents`), `discovered_documents` by ingestion on the first `POST /discover`. Chat has no database access.
+Each table has one owning service. Other services must not write to it. `chunks` is created by `db/init/001_chunks.sql`, which also enables the pgvector extension. The other tables are created by their owner with `CREATE TABLE IF NOT EXISTS`: `documents` by extraction when its consumer starts (or on the first `GET /documents`), `discovered_documents` by ingestion on the first `POST /discover`, `users` and `refresh_tokens` by auth on startup, `conversations` and `messages` by chat on startup.
 
 ### `chunks` (owner: indexing; created by `db/init/001_chunks.sql`)
 
@@ -230,6 +246,46 @@ Retrieval reads this table, read-only.
 | `pages`        | `JSONB`       | `[{"page": 1, "text": "..."}]` |
 | `extracted_at` | `TIMESTAMPTZ` |                                |
 
+### `users` (owner: auth)
+
+| Column          | Type          | Notes                          |
+|-----------------|---------------|--------------------------------|
+| `id`            | `TEXT` PK     | UUID                           |
+| `email`         | `TEXT`        | unique                         |
+| `password_hash` | `TEXT`        | only the hash, never the password |
+| `created_at`    | `TIMESTAMPTZ` | default `now()`                |
+
+### `refresh_tokens` (owner: auth)
+
+| Column       | Type          | Notes                                |
+|--------------|---------------|--------------------------------------|
+| `id`         | `TEXT` PK     | UUID                                 |
+| `user_id`    | `TEXT`        | FK to `users(id)`, indexed           |
+| `token_hash` | `TEXT`        | unique, only the hash is stored      |
+| `expires_at` | `TIMESTAMPTZ` |                                      |
+| `revoked_at` | `TIMESTAMPTZ` | null until the token is revoked      |
+| `created_at` | `TIMESTAMPTZ` | default `now()`                      |
+
+### `conversations` (owner: chat)
+
+| Column       | Type          | Notes                                                       |
+|--------------|---------------|-------------------------------------------------------------|
+| `id`         | `TEXT` PK     | UUID                                                        |
+| `user_id`    | `TEXT`        | JWT `sub`, no FK because `users` belongs to auth. Indexed with `created_at` |
+| `title`      | `TEXT`        |                                                             |
+| `created_at` | `TIMESTAMPTZ` | default `now()`                                             |
+
+### `messages` (owner: chat)
+
+| Column            | Type          | Notes                                                    |
+|-------------------|---------------|----------------------------------------------------------|
+| `id`              | `TEXT` PK     | UUID                                                     |
+| `conversation_id` | `TEXT`        | FK to `conversations(id)`, `ON DELETE CASCADE`. Indexed with `created_at` |
+| `role`            | `TEXT`        | `user` or `assistant`                                    |
+| `content`         | `TEXT`        |                                                          |
+| `citations`       | `JSONB`       | default `[]`                                             |
+| `created_at`      | `TIMESTAMPTZ` | default `now()`                                          |
+
 ### Planned for Sprint 2
 
-Tier 1 adds auth and session tables (`users`, `refresh_tokens`, `conversations`, `messages`), and Tier 2 adds a semantic cache owned by chat. Neither exists yet. See [`design-tier1-auth-sessions.md`](../features/design-tier1-auth-sessions.md) and [`design-tier2-rate-limit-cache.md`](../features/design-tier2-rate-limit-cache.md). This file is updated when they are built.
+Tier 2 adds a semantic cache owned by chat. It doesn't exist yet, see [`design-tier2-rate-limit-cache.md`](../features/design-tier2-rate-limit-cache.md). This file is updated when it is built.

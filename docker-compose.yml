@@ -93,6 +93,9 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
       RETRIEVAL_URL: http://retrieval:8000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+    secrets:
+      - jwt_public_key
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -109,6 +112,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
+    secrets:
+      - jwt_private_key
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -118,3 +124,9 @@ services:
 volumes:
   postgres_data:
   pdfs:
+
+secrets:
+  jwt_private_key:
+    file: ${JWT_PRIVATE_KEY_FILE:-./keys/jwt_private.pem}
+  jwt_public_key:
+    file: ${JWT_PUBLIC_KEY_FILE:-./keys/jwt_public.pem}

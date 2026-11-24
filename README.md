@@ -99,10 +99,11 @@ flowchart LR
 | indexing   | 8002 | Chunk (~200 tokens, 40 overlap), embed, store               | running                    |
 | retrieval  | 8003 | Vector search over pgvector                                 | running                    |
 | chat       | 8004 | Prompt + LLM, citations, serves web UI                      | running                    |
+| auth       | 8006 | Accounts and JWT issuing (Tier 1, in progress)              | running                    |
 | postgres   | 5432 | Postgres 16 + pgvector                                      | running                    |
 | rabbitmq   | 5672 / 15672 | AMQP broker / management UI                         | running                    |
 
-Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval). `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet; RabbitMQ drops them until one binds a queue.
+Each table has one owning service: `discovered_documents` (ingestion), `documents` (extraction), `chunks` (indexing, read-only for retrieval), `users` and `refresh_tokens` (auth), `conversations` and `messages` (chat). `ChunksIndexed`, `RetrievalCompleted` and `AnswerGenerated` have no consumer yet; RabbitMQ drops them until one binds a queue.
 
 Per-service details: [`docs/services/`](docs/services/).
 
@@ -124,6 +125,7 @@ Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum
 | Chunking        | `tiktoken`                                                     |
 | Embeddings      | `BAAI/bge-small-en-v1.5` via `sentence-transformers` (local, CPU, shared by indexing and retrieval) |
 | LLM             | OpenRouter (model set by `OPENROUTER_MODEL`, default `nvidia/nemotron-3.5-super-vl:free`) |
+| JWT keys        | RS256 pair made with `openssl`, loaded with `cryptography`     |
 | Packaging       | Docker, Docker Compose                                         |
 | Testing / CI    | pytest, GitHub Actions (tests + `docker compose build`)        |
 
@@ -133,8 +135,9 @@ Scrum artefacts (product goal, backlog, sprint log, retrospective): [`docs/scrum
 
 - Docker with Compose v2 (Docker Desktop on Windows)
 - Git
+- OpenSSL, to generate the JWT key pair (included in Git Bash on Windows)
 - Internet access and about 6 GB free disk (the first build downloads PyTorch and the embedding model)
-- Free ports: 5432, 5672, 15672, 8001, 8002, 8003, 8004, 8005
+- Free ports: 5432, 5672, 15672, 8001, 8002, 8003, 8004, 8005, 8006
 - (Python 3.12 only if you run tests outside Docker)
 
 On Windows, run the commands below in Git Bash or WSL.
@@ -147,7 +150,15 @@ cd RAG-Chatbot-
 cp .env.example .env
 ```
 
-Defaults in `.env.example` work for the pipeline. For chat, set `OPENROUTER_API_KEY` in `.env` (free key at https://openrouter.ai/keys). `OPENROUTER_MODEL` defaults to `nvidia/nemotron-3.5-super-vl:free`, and `SCORE_THRESHOLD` (minimum retrieval score before the LLM is called) to `0.6`.
+Defaults in `.env.example` work for the pipeline. For chat, set `OPENROUTER_API_KEY` in `.env` (free key at https://openrouter.ai/keys). `OPENROUTER_MODEL` defaults to `nvidia/nemotron-3.5-super-vl:free`, and `SCORE_THRESHOLD` (minimum retrieval score before the LLM is called) to `0.6`. `CORS_ALLOWED_ORIGINS` lists the origins allowed to call auth (`*` is not allowed).
+
+Create the JWT keys (once):
+
+```bash
+./scripts/gen-keys.sh
+```
+
+This makes `keys/jwt_private.pem` (auth uses it to sign tokens) and `keys/jwt_public.pem` (chat uses it to check them). Auth and chat won't start without them. Running it again keeps the existing keys, `--force` makes new ones: restart auth and chat afterwards (`docker compose restart auth chat`), and tokens issued before stop working. `keys/` is in `.gitignore`.
 
 ### Running
 
@@ -163,6 +174,7 @@ curl localhost:8002/health      # indexing   -> {"status":"ok"}
 curl localhost:8003/health      # retrieval  -> {"status":"ok"}
 curl localhost:8004/health      # chat       -> {"status":"ok"}
 curl localhost:8005/health      # extraction -> {"status":"ok"}
+curl localhost:8006/health      # auth       -> {"status":"ok"}
 ```
 
 Optional: watch queues and events in the RabbitMQ UI at http://localhost:15672 (login from `.env`, default `guest` / `guest`).
@@ -187,7 +199,7 @@ Stop: `docker compose down` (add `-v` to also wipe the database and downloaded P
 ### Tests
 
 ```bash
-cd services/ingestion   # or extraction, indexing, retrieval, chat
+cd services/ingestion   # or extraction, indexing, retrieval, chat, auth
 pip install -r requirements.txt
 python -m pytest
 ```

@@ -60,3 +60,27 @@ def test_startup_creates_tables(monkeypatch):
 
     assert connect.call_args.args == ("postgresql://test",)
     assert calls == [connect.return_value.__enter__.return_value]
+
+
+def test_create_user_skips_duplicate_email_and_returns_none():
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = None
+    assert store.create_user(conn, "a@lancaster.ac.uk", "hash") is None
+    sql, values = conn.execute.call_args.args
+    assert "ON CONFLICT (email) DO NOTHING" in sql
+    assert "RETURNING id" in sql
+    assert values[1:] == ("a@lancaster.ac.uk", "hash")
+
+
+def test_create_user_returns_new_id():
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = {"id": "u123"}
+    assert store.create_user(conn, "a@lancaster.ac.uk", "hash") == "u123"
+
+
+def test_save_refresh_token_stores_the_hash_it_is_given():
+    conn = MagicMock()
+    store.save_refresh_token(conn, "u123", "token-hash", "2026-12-01")
+    sql, values = conn.execute.call_args.args
+    assert "INSERT INTO refresh_tokens" in sql
+    assert values[1:] == ("u123", "token-hash", "2026-12-01")

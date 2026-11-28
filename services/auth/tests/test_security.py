@@ -96,3 +96,15 @@ def test_refresh_token_hash_is_stable_and_not_the_token():
 
 def test_refresh_tokens_are_random():
     assert security.new_refresh_token()[0] != security.new_refresh_token()[0]
+
+
+def test_access_token_header_has_kid_of_the_signing_key(key):
+    token = security.create_access_token(key, "u123", "a@x.com")
+    assert jwt.get_unverified_header(token)["kid"] == security.key_id(key.public_key())
+
+
+def test_key_id_is_the_same_for_the_same_key_and_different_for_another(key):
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    assert security.key_id(key.public_key()) == security.key_id(key.public_key())
+    assert security.key_id(key.public_key()) != security.key_id(other.public_key())
+    assert len(security.key_id(key.public_key())) == 16

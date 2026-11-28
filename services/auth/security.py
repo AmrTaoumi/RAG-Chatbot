@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
+from cryptography.hazmat.primitives import serialization
 # Argon2 adds a salt which are random extra characters mixed in each time
 # so the same password gives a different hash every time
 from argon2 import PasswordHasher
@@ -30,6 +31,13 @@ def verify_password(password_hash, password):
         return False
 
 
+def key_id(public_key):
+    der = public_key.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return hashlib.sha256(der).hexdigest()[:16]
+
 def create_access_token(private_key, user_id, email):
     now = int(time.time())
     payload = {
@@ -39,7 +47,8 @@ def create_access_token(private_key, user_id, email):
         "exp": now + ACCESS_TOKEN_SECONDS,
         "jti": str(uuid.uuid4()),
     }
-    return jwt.encode(payload, private_key, algorithm="RS256") #  stamps it with the private key.
+    kid = key_id(private_key.public_key())
+    return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": kid}) #  stamps it with the private key.
 
 
 def decode_access_token(public_key, token): # checks the stamp against the public key and gives abck the payloud
